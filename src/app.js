@@ -18,7 +18,7 @@
   function addSet(name) {
     const used = new Set(state.sets.map(s => s.color));
     const color = COLORS.find(c => !used.has(c)) || COLORS[state.sets.length % COLORS.length];
-    const set = { id: state.nextId++, name: name || `セット${state.sets.length + 1}`, color, visible: true, R: null, L: null };
+    const set = { id: state.nextId++, name: name || `セット${state.sets.length + 1}`, color, visible: true, R: null, L: null, dz: 0 };
     state.sets.push(set);
     return set;
   }
@@ -118,12 +118,35 @@
       const pair = $('alignMode').value === 'abs' && s.R && s.L ? C.alignPair(s.R, s.L) : null;
       const R = pair ? pair.R : s.R && C.alignSide(s.R.prof, s.R.tipX, s.R.invertZ, s.R.reverseX);
       const L = pair ? pair.L : s.L && C.alignSide(s.L.prof, s.L.tipX, s.L.invertZ, s.L.reverseX);
-      s.sec = C.buildSection(R, L, level);
+      s.sec0 = C.buildSection(R, L, level);
+      // Z方向の平行移動（セットごと）
+      s.sec = Object.assign({}, s.sec0, { R: C.shiftZ(s.sec0.R, s.dz), L: C.shiftZ(s.sec0.L, s.dz) });
     }
     return state.sets;
   }
 
   const complete = s => s.visible && s.sec && s.sec.R && s.sec.L;
+  const baseSet = () => state.sets.find(s => s.sec0 && s.sec0.R && s.sec0.L) || state.sets.find(s => s.sec0 && (s.sec0.R || s.sec0.L));
+
+  function matchRange() {
+    const a = parseFloat($('matchFrom').value), b = parseFloat($('matchTo').value);
+    return [Math.min(a, b) || 0, Math.max(a, b) || 0];
+  }
+
+  // 基準セットに対する一致度（現在の移動量での残差）と、最適な移動量
+  function matchInfo(s) {
+    const base = baseSet();
+    if (!base || base === s || !s.sec0 || !base.sec) return null;
+    const [a, b] = matchRange();
+    const best = C.matchZ(base.sec, s.sec0, a, b);
+    const cur = C.matchZ(base.sec, s.sec, a, b);
+    return { best, cur, base };
+  }
+
+  function autoMatch(s) {
+    const m = matchInfo(s);
+    if (m && Number.isFinite(m.best.dz)) s.dz = m.best.dz;
+  }
 
   function distances() {
     return $('distInput').value.split(/[,\s、，]+/).map(parseFloat).filter(v => Number.isFinite(v) && v >= 0);
@@ -136,6 +159,7 @@
     modeBarButtonsToRemove: ['select2d', 'lasso2d'] };
 
   function refreshAll() {
+    sections();
     renderSets();
     renderFileList();
     refreshPlots();
@@ -151,6 +175,22 @@
   function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
   function fmtTime(f) { return f.prof.meta.DateTime ? esc(f.prof.meta.DateTime) : ''; }
+
+  function zRow(s) {
+    if (!s.sec0 || !(s.sec0.R || s.sec0.L)) return '';
+    const base = baseSet();
+    const m = matchInfo(s);
+    const info = s === base ? '<span class="muted">Z合わせの基準</span>'
+      : m && Number.isFinite(m.cur.dz) ? `<span class="muted" title="指定区間での基準セットとの残差（RMS）">ずれ ${(m.cur.rms * 1000).toFixed(1)} µm（平均 ${(-m.cur.dz * 1000).toFixed(1)} µm）</span>` : '';
+    return `<div class="ctrl" style="margin:6px 0 0">
+      <label>Z移動</label>
+      <button class="small" data-z="minus">−</button>
+      <input type="number" class="dz" step="0.1" value="${(s.dz * 1000).toFixed(1)}" style="width:80px">
+      <button class="small" data-z="plus">＋</button><span class="muted">µm</span>
+      ${s === base ? '' : '<button class="small" data-z="auto" title="刃先から指定区間で基準セットに重なるよう自動で移動">自動合わせ</button>'}
+      <button class="small" data-z="zero">0</button>
+      ${info}</div>`;
+  }
 
   function renderSets() {
     const el = $('setList');
@@ -173,6 +213,7 @@
           <button class="small" data-act="del">削除</button>
         </div>
         <div class="slots">${slot('R')}${slot('L')}</div>${warn}
+        ${zRow(s)}
       </div>`;
     }).join('');
 
@@ -195,6 +236,16 @@
           state.sets.splice(i, 1);
           if (!findFile(state.selectedId)) state.selectedId = allFiles()[0] ? allFiles()[0].id : null;
         }
+        refreshAll();
+      });
+      const dzIn = div.querySelector('.dz');
+      if (dzIn) dzIn.onchange = e => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) { s.dz = v / 1000; refreshAll(); } };
+      div.querySelectorAll('button[data-z]').forEach(b => b.onclick = () => {
+        const step = parseFloat($('nudgeStep').value);
+        if (b.dataset.z === 'minus') s.dz -= step;
+        else if (b.dataset.z === 'plus') s.dz += step;
+        else if (b.dataset.z === 'zero') s.dz = 0;
+        else if (b.dataset.z === 'auto') autoMatch(s);
         refreshAll();
       });
       div.querySelectorAll('.slot').forEach(sl => sl.onclick = () => {
@@ -526,9 +577,12 @@
     state.sets = []; addSet('研磨前'); addSet('研磨後'); state.selectedId = null; refreshAll();
   };
   $('redetectAll').onclick = () => { allFiles().forEach(detect); refreshAll(); };
-  $('levelOn').onchange = refreshPlots;
-  $('alignMode').onchange = refreshPlots;
-  $('levelLen').onchange = refreshPlots;
+  $('levelOn').onchange = refreshAll;
+  $('autoMatchAll').onclick = () => { sections(); state.sets.forEach(s => { if (s !== baseSet()) autoMatch(s); }); refreshAll(); };
+  $('matchFrom').onchange = refreshAll;
+  $('matchTo').onchange = refreshAll;
+  $('alignMode').onchange = refreshAll;
+  $('levelLen').onchange = refreshAll;
   $('distInput').onchange = () => renderThickness(sections());
   $('thickLog').onchange = () => renderThickness(sections());
   $('tipWin').onchange = renderTipPlot;

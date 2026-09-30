@@ -79,6 +79,11 @@
       <h2>測定セット<span class="sp"></span><button class="small" id="addSet">＋ セット追加</button><button class="small" id="clearAll">全て削除</button></h2>
       <div class="muted">各セットの枠に右面・左面の2ファイルをまとめてドロップ（ファイル名の _r / _l で自動振り分け）。「右面」「左面」の枠に直接ドロップ・クリックして個別に入れ替えも可。</div>
       <div id="setList"></div>
+      <div class="ctrl" style="margin-top:10px"><label>Z自動合わせの区間 刃先から</label>
+        <input type="number" id="matchFrom" value="3" min="0" step="0.5" style="width:60px">〜<input type="number" id="matchTo" value="20" min="0" step="0.5" style="width:60px"> mm
+        <button class="small" id="autoMatchAll">全セット自動合わせ</button>
+      </div>
+      <div class="muted">Z移動: 各セットの断面を上下に平行移動します（±ボタンの刻みは「刃先位置の調整」欄の設定）。自動合わせは、指定区間で一番上のセット（基準）と右面・左面が最もよく重なる量を計算します。厚みの値は変わりません。</div>
       <input type="file" id="fileInput" multiple accept=".txt,.csv,.dat" hidden>
     </section>
 

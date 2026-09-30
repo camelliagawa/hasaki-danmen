@@ -52,7 +52,7 @@
       if (meta.ContactDirection === 'ZNegative') side = 'R';
       else if (meta.ContactDirection === 'ZPositive') side = 'L';
     }
-    const key = base.replace(/[_\-\s]\d{3,}$/, '').replace(/[_\-\s]+$/, '').replace(/^[_\-\s]+/, '').replace(/__+/g, '_') || base;
+    const key = base.replace(/[_\-\s]\d{3,}(?=[_\-\s]|$)/g, '').replace(/[_\-\s]+$/, '').replace(/^[_\-\s]+/, '').replace(/__+/g, '_') || base;
     return { side: side || 'R', key };
   }
 
@@ -236,6 +236,32 @@
     return { R: R && rotate(R, ang), L: L && rotate(L, ang), angle: ang };
   }
 
+  function shiftZ(p, dz) {
+    if (!p || !dz) return p;
+    const z = new Float64Array(p.z.length);
+    for (let i = 0; i < z.length; i++) z[i] = p.z[i] + dz;
+    return { x: p.x, z };
+  }
+
+  // sec を Z 方向に dz 移動したとき、刃先から [d0, d1] mm の区間で base と最もよく重なる dz（最小二乗）
+  //   返り値 {dz, rms}: rms は移動後の残差 [mm]
+  function matchZ(base, sec, d0, d1) {
+    const diffs = [];
+    const N = 1000;
+    for (let i = 0; i <= N; i++) {
+      const u = -(d0 + (d1 - d0) * i / N);
+      for (const side of ['R', 'L']) {
+        if (!base[side] || !sec[side]) continue;
+        const v = interp(base[side].x, base[side].z, u) - interp(sec[side].x, sec[side].z, u);
+        if (Number.isFinite(v)) diffs.push(v);
+      }
+    }
+    if (!diffs.length) return { dz: NaN, rms: NaN };
+    const dz = diffs.reduce((a, b) => a + b, 0) / diffs.length;
+    const rms = Math.sqrt(diffs.reduce((a, b) => a + (b - dz) * (b - dz), 0) / diffs.length);
+    return { dz, rms };
+  }
+
   // 刃先から距離 d の厚み（右面Z − 左面Z）
   function thicknessAt(sec, d) {
     if (!sec.R || !sec.L) return NaN;
@@ -262,6 +288,6 @@
 
   root.HasakiCore = {
     decodeText, parseProfile, guessSideAndKey, guessInvertZ, detectTip,
-    alignSide, alignPair, buildSection, thicknessAt, includedAngle, interp, decimate, fitSlope,
+    alignSide, alignPair, buildSection, shiftZ, matchZ, thicknessAt, includedAngle, interp, decimate, fitSlope,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
