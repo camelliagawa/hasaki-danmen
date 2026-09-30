@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>刃先断面ビューア</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1f2328; --muted: #656d76;
+    --border: #d0d7de; --accent: #2563eb; --accent-weak: #e8effd; --warn: #b45309;
+    --drop: rgba(37, 99, 235, .12);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Yu Gothic UI", Meiryo, sans-serif; }
+  header { display: flex; align-items: center; gap: 16px; padding: 10px 16px; background: var(--panel);
+    border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  header h1 { font-size: 17px; margin: 0; }
+  header .hint { color: var(--muted); font-size: 13px; }
+  main { display: grid; grid-template-columns: minmax(360px, 460px) 1fr; gap: 12px; padding: 12px; }
+  @media (max-width: 1000px) { main { grid-template-columns: 1fr; } }
+  section.card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+  section.card h2 { font-size: 14px; margin: 0 0 8px; display: flex; align-items: center; gap: 8px; }
+  section.card h2 .sp { flex: 1; }
+  button { font: inherit; padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px; background: #fff; cursor: pointer; }
+  button:hover { background: var(--accent-weak); }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  button.small { padding: 1px 6px; font-size: 12px; }
+  button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  input[type=number], input[type=text], select { font: inherit; padding: 2px 4px; border: 1px solid var(--border); border-radius: 4px; }
+  #dropzone { border: 2px dashed var(--border); border-radius: 8px; padding: 18px; text-align: center; color: var(--muted); cursor: pointer; }
+  #dropzone:hover { border-color: var(--accent); color: var(--accent); }
+  body.dragging #overlay { display: flex; }
+  #overlay { display: none; position: fixed; inset: 0; background: var(--drop); border: 4px dashed var(--accent);
+    align-items: center; justify-content: center; font-size: 24px; color: var(--accent); z-index: 100; pointer-events: none; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border-bottom: 1px solid var(--border); padding: 4px 4px; text-align: left; vertical-align: middle; font-size: 13px; }
+  th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .file { border: 1px solid var(--border); border-radius: 6px; padding: 8px; margin-top: 8px; }
+  .file.sel { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-weak); }
+  .file .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+  .file .name { font-weight: 600; word-break: break-all; }
+  .file .warn { color: var(--warn); font-size: 12px; }
+  .file input.tip { width: 110px; }
+  .file input.key { width: 120px; }
+  .swatch { width: 14px; height: 14px; border-radius: 3px; display: inline-block; vertical-align: middle; }
+  .ctrl { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 6px 0; }
+  .ctrl label { color: var(--muted); }
+  .muted { color: var(--muted); font-size: 12px; }
+  .plot { width: 100%; }
+  #plotSection { height: 520px; }
+  #plotThick { height: 340px; }
+  #plotTip { height: 340px; }
+  .empty { color: var(--muted); padding: 30px; text-align: center; }
+  #distInput { width: 100%; }
+</style>
+</head>
+<body>
+<div id="overlay">ここにドロップして読み込み</div>
+<header>
+  <h1>刃先断面ビューア</h1>
+  <span class="hint">右面・左面の測定ファイル（.txt）をウィンドウへドラッグ＆ドロップ → 刃先を原点に合わせて断面を表示</span>
+</header>
+<main>
+  <div>
+    <section class="card">
+      <div id="dropzone">ファイルをドロップ、またはクリックして選択<br><span class="muted">複数ファイル可（右面＋左面で1本。複数本も可）</span></div>
+      <input type="file" id="fileInput" multiple accept=".txt,.csv,.dat" hidden>
+    </section>
+
+    <section class="card">
+      <h2>包丁一覧<span class="sp"></span><button class="small" id="clearAll">全て削除</button></h2>
+      <div id="knifeList"><div class="muted">未読込</div></div>
+    </section>
+
+    <section class="card">
+      <h2>ファイル（刃先位置の調整）</h2>
+      <div class="muted">包丁名が同じ右面＋左面がペアになります。刃先Xは自動検出値。数値入力・±ボタン・下の「刃先確認」グラフのクリックで調整できます。</div>
+      <div class="ctrl"><label>±ボタンの刻み</label>
+        <select id="nudgeStep"><option value="0.0001">0.1 µm</option><option value="0.001" selected>1 µm</option><option value="0.01">10 µm</option><option value="0.1">100 µm</option></select>
+        <label>検出しきい角</label><input type="number" id="detAngle" value="40" min="5" max="85" step="1" style="width:60px">°
+        <button class="small" id="redetectAll">全て再検出</button>
+      </div>
+      <div id="fileList"></div>
+    </section>
+
+    <section class="card">
+      <h2>表示設定</h2>
+      <div class="ctrl"><label>縦横比</label>
+        <span id="scaleBtns">
+          <button data-s="1" class="on">1:1</button><button data-s="2">厚み×2</button><button data-s="5">×5</button><button data-s="10">×10</button><button data-s="20">×20</button><button data-s="0">自動</button>
+        </span>
+      </div>
+      <div class="ctrl"><label>表示範囲（刃先から）</label>
+        <span id="rangeBtns">
+          <button data-r="0" class="on">全体</button><button data-r="10">10mm</button><button data-r="5">5mm</button><button data-r="1">1mm</button><button data-r="0.2">0.2mm</button><button data-r="0.05">0.05mm</button>
+        </span>
+      </div>
+      <div class="ctrl"><label><input type="checkbox" id="levelOn"> 中心線を水平にする</label>
+        <label>近似区間 0〜</label><input type="number" id="levelLen" value="5" min="0.01" step="0.5" style="width:70px"> mm
+      </div>
+      <div class="muted">中心線水平化: 刃先から指定区間の両面の近似直線の二等分線が水平になるよう、刃先を中心に回転します。厚みは回転後の縦方向で計算します。</div>
+    </section>
+  </div>
+
+  <div>
+    <section class="card">
+      <h2>包丁断面（刃先 = 原点）<span class="sp"></span><button class="small" id="pngSection">PNG保存</button></h2>
+      <div id="plotSection" class="plot"><div class="empty">ファイルを読み込むとここに断面が表示されます</div></div>
+    </section>
+
+    <section class="card">
+      <h2>厚み（刃先からの距離ごと）<span class="sp"></span><button class="small" id="csvTable">厚み表CSV</button><button class="small" id="csvData">合成データCSV</button></h2>
+      <div class="ctrl"><label>距離[mm]（カンマ区切り）</label></div>
+      <input type="text" id="distInput" value="0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 0.5, 1, 2, 3, 5, 10, 15, 20">
+      <div class="muted">刃角 = 刃先から0〜距離の区間で両面を直線近似したときのなす角（参考値）</div>
+      <div id="thickTable" style="overflow-x:auto; margin-top:8px"></div>
+      <div class="ctrl"><label>合成データCSVの出力ピッチ</label><input type="number" id="csvPitch" value="0.001" step="0.0001" min="0.0001" style="width:80px"> mm</div>
+    </section>
+
+    <section class="card">
+      <h2>厚み曲線<span class="sp"></span><label class="muted"><input type="checkbox" id="thickLog" checked> 横軸を対数</label><button class="small" id="pngThick">PNG保存</button></h2>
+      <div id="plotThick" class="plot"></div>
+    </section>
+
+    <section class="card">
+      <h2>刃先確認（選択中ファイルの生データ）<span class="sp"></span>
+        <label class="muted">表示幅 ±</label>
+        <select id="tipWin"><option value="0.01">0.01</option><option value="0.03">0.03</option><option value="0.1" selected>0.1</option><option value="0.3">0.3</option><option value="1">1</option></select><span class="muted">mm</span>
+      </h2>
+      <div class="muted" id="tipInfo">ファイル欄の「確認」を押すと表示。グラフ上をクリックするとその位置を刃先に設定します。</div>
+      <div id="plotTip" class="plot"></div>
+    </section>
+  </div>
+</main>
+<!-- INLINE_SCRIPTS -->
+</body>
+</html>
