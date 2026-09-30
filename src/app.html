@@ -97,7 +97,7 @@
       <h2>表示設定</h2>
       <div class="ctrl"><label>縦横比</label>
         <span id="scaleBtns">
-          <button data-s="1" class="on">1:1</button><button data-s="2">厚み×2</button><button data-s="5">×5</button><button data-s="10">×10</button><button data-s="20">×20</button><button data-s="0">自動</button>
+          <button data-s="1">1:1</button><button data-s="2">厚み×2</button><button data-s="5" class="on">×5</button><button data-s="10">×10</button><button data-s="20">×20</button><button data-s="0">自動</button>
         </span>
       </div>
       <div class="ctrl"><label>表示範囲（刃先から）</label>
@@ -105,6 +105,13 @@
           <button data-r="0" class="on">全体</button><button data-r="10">10mm</button><button data-r="5">5mm</button><button data-r="1">1mm</button><button data-r="0.2">0.2mm</button><button data-r="0.05">0.05mm</button>
         </span>
       </div>
+      <div class="ctrl"><label>刃先の合わせ方</label>
+        <select id="alignMode">
+          <option value="abs" selected>測定座標で上下面の間隔を保持（推奨）</option>
+          <option value="tip">右面と左面の刃先を1点に合わせる</option>
+        </select>
+      </div>
+      <div class="muted">推奨: 右面・左面の測定Z座標の差をそのまま厚みとし、先端の厚み（刃付け前の平らな端面など）を残して、先端の上下中点を原点にします。点線は先端の端面です。</div>
       <div class="ctrl"><label><input type="checkbox" id="levelOn"> 中心線を水平にする</label>
         <label>近似区間 0〜</label><input type="number" id="levelLen" value="5" min="0.01" step="0.5" style="width:70px"> mm
       </div>
@@ -121,7 +128,7 @@
     <section class="card">
       <h2>厚み（刃先からの距離ごと）<span class="sp"></span><button class="small" id="csvTable">厚み表CSV</button><button class="small" id="csvData">合成データCSV</button></h2>
       <div class="ctrl"><label>距離[mm]（カンマ区切り）</label></div>
-      <input type="text" id="distInput" value="0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 0.5, 1, 2, 3, 5, 10, 15, 20">
+      <input type="text" id="distInput" value="0, 0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 0.5, 1, 2, 3, 5, 10, 15, 20">
       <div class="muted">刃角 = 刃先から0〜距離の区間で両面を直線近似したときのなす角（参考値）</div>
       <div id="thickTable" style="overflow-x:auto; margin-top:8px"></div>
       <div class="ctrl"><label>合成データCSVの出力ピッチ</label><input type="number" id="csvPitch" value="0.001" step="0.0001" min="0.0001" style="width:80px"> mm</div>

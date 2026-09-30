@@ -9,7 +9,7 @@
   const state = {
     sets: [],             // {id, name, color, visible, R: file|null, L: file|null}
     selectedId: null,     // 刃先確認グラフに表示するファイル
-    scale: 1,
+    scale: 5,
     range: 0,
     nextId: 1,
     pickTarget: null,     // クリックでファイル選択したときの投入先 {setId, side}
@@ -114,8 +114,10 @@
   function sections() {
     const level = $('levelOn').checked ? (parseFloat($('levelLen').value) || 0) : 0;
     for (const s of state.sets) {
-      const R = s.R && C.alignSide(s.R.prof, s.R.tipX, s.R.invertZ, s.R.reverseX);
-      const L = s.L && C.alignSide(s.L.prof, s.L.tipX, s.L.invertZ, s.L.reverseX);
+      // 既定: 測定座標の上下間隔を保持（先端の厚みを残す）。片面のみ・旧方式は各面の刃先を原点へ
+      const pair = $('alignMode').value === 'abs' && s.R && s.L ? C.alignPair(s.R, s.L) : null;
+      const R = pair ? pair.R : s.R && C.alignSide(s.R.prof, s.R.tipX, s.R.invertZ, s.R.reverseX);
+      const L = pair ? pair.L : s.L && C.alignSide(s.L.prof, s.L.tipX, s.L.invertZ, s.L.reverseX);
       s.sec = C.buildSection(R, L, level);
     }
     return state.sets;
@@ -124,7 +126,7 @@
   const complete = s => s.visible && s.sec && s.sec.R && s.sec.L;
 
   function distances() {
-    return $('distInput').value.split(/[,\s、，]+/).map(parseFloat).filter(v => Number.isFinite(v) && v > 0);
+    return $('distInput').value.split(/[,\s、，]+/).map(parseFloat).filter(v => Number.isFinite(v) && v >= 0);
   }
 
   // ---------- 描画 ----------
@@ -271,6 +273,15 @@
         });
       }
     }
+    // 先端の端面（右面の先端と左面の先端を結ぶ線）
+    for (const s of ss) {
+      if (!s.visible || !s.sec.R || !s.sec.L) continue;
+      const r = s.sec.R, l = s.sec.L, nr = r.x.length - 1, nl = l.x.length - 1;
+      const t = r.z[nr] - l.z[nl];
+      traces.push({ type: 'scatter', mode: 'lines', x: [r.x[nr], l.x[nl]], y: [r.z[nr], l.z[nl]], showlegend: false,
+        legendgroup: String(s.id), line: { color: s.color, width: 1.5, dash: 'dot' },
+        hovertemplate: `${esc(s.name)} 先端厚さ ${(t * 1000).toFixed(1)} µm<extra></extra>` });
+    }
     traces.push({ type: 'scatter', mode: 'markers', x: [0], y: [0], name: '刃先', showlegend: false,
       marker: { color: '#000', size: 7, symbol: 'x' }, hovertemplate: '刃先 (0, 0)<extra></extra>' });
     return traces;
@@ -333,7 +344,7 @@
       (s !== base ? `<th class="num">差 [µm]<br><span class="muted">対 ${esc(base.name)}</span></th>` : '')).join('') + '</tr>';
     for (const d of ds) {
       const tb = C.thicknessAt(base.sec, d);
-      h += `<tr><td class="num">${d}</td>` + pairs.map(s => {
+      h += `<tr><td class="num">${d === 0 ? '0（先端）' : d}</td>` + pairs.map(s => {
         const t = C.thicknessAt(s.sec, d), a = C.includedAngle(s.sec, d);
         const diff = (t - tb) * 1000;
         return `<td class="num">${Number.isFinite(t) ? t.toFixed(4) : '—'}</td><td class="num">${Number.isFinite(a) ? a.toFixed(2) : '—'}</td>` +
@@ -440,7 +451,8 @@
       const tb = C.thicknessAt(base.sec, d);
       rows.push([d, ...pairs.flatMap(s => {
         const t = C.thicknessAt(s.sec, d);
-        return [t.toFixed(5), C.includedAngle(s.sec, d).toFixed(3), ...(s !== base ? [((t - tb) * 1000).toFixed(2)] : [])];
+        const f = (v, k) => Number.isFinite(v) ? v.toFixed(k) : '';
+        return [f(t, 5), f(C.includedAngle(s.sec, d), 3), ...(s !== base ? [f((t - tb) * 1000, 2)] : [])];
       })]);
     }
     download(baseName() + '_厚み表.csv', rows.map(r => r.join(',')).join('\r\n'));
@@ -515,6 +527,7 @@
   };
   $('redetectAll').onclick = () => { allFiles().forEach(detect); refreshAll(); };
   $('levelOn').onchange = refreshPlots;
+  $('alignMode').onchange = refreshPlots;
   $('levelLen').onchange = refreshPlots;
   $('distInput').onchange = () => renderThickness(sections());
   $('thickLog').onchange = () => renderThickness(sections());

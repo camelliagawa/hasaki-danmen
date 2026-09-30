@@ -97,7 +97,7 @@
       <h2>表示設定</h2>
       <div class="ctrl"><label>縦横比</label>
         <span id="scaleBtns">
-          <button data-s="1" class="on">1:1</button><button data-s="2">厚み×2</button><button data-s="5">×5</button><button data-s="10">×10</button><button data-s="20">×20</button><button data-s="0">自動</button>
+          <button data-s="1">1:1</button><button data-s="2">厚み×2</button><button data-s="5" class="on">×5</button><button data-s="10">×10</button><button data-s="20">×20</button><button data-s="0">自動</button>
         </span>
       </div>
       <div class="ctrl"><label>表示範囲（刃先から）</label>
@@ -105,6 +105,13 @@
           <button data-r="0" class="on">全体</button><button data-r="10">10mm</button><button data-r="5">5mm</button><button data-r="1">1mm</button><button data-r="0.2">0.2mm</button><button data-r="0.05">0.05mm</button>
         </span>
       </div>
+      <div class="ctrl"><label>刃先の合わせ方</label>
+        <select id="alignMode">
+          <option value="abs" selected>測定座標で上下面の間隔を保持（推奨）</option>
+          <option value="tip">右面と左面の刃先を1点に合わせる</option>
+        </select>
+      </div>
+      <div class="muted">推奨: 右面・左面の測定Z座標の差をそのまま厚みとし、先端の厚み（刃付け前の平らな端面など）を残して、先端の上下中点を原点にします。点線は先端の端面です。</div>
       <div class="ctrl"><label><input type="checkbox" id="levelOn"> 中心線を水平にする</label>
         <label>近似区間 0〜</label><input type="number" id="levelLen" value="5" min="0.01" step="0.5" style="width:70px"> mm
       </div>
@@ -121,7 +128,7 @@
     <section class="card">
       <h2>厚み（刃先からの距離ごと）<span class="sp"></span><button class="small" id="csvTable">厚み表CSV</button><button class="small" id="csvData">合成データCSV</button></h2>
       <div class="ctrl"><label>距離[mm]（カンマ区切り）</label></div>
-      <input type="text" id="distInput" value="0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 0.5, 1, 2, 3, 5, 10, 15, 20">
+      <input type="text" id="distInput" value="0, 0.01, 0.02, 0.05, 0.1, 0.2, 0.3, 0.5, 1, 2, 3, 5, 10, 15, 20">
       <div class="muted">刃角 = 刃先から0〜距離の区間で両面を直線近似したときのなす角（参考値）</div>
       <div id="thickTable" style="overflow-x:auto; margin-top:8px"></div>
       <div class="ctrl"><label>合成データCSVの出力ピッチ</label><input type="number" id="csvPitch" value="0.001" step="0.0001" min="0.0001" style="width:80px"> mm</div>
@@ -330,6 +337,39 @@
     return { x: ax, z: az };
   }
 
+  // 右面・左面を測定座標の上下間隔を保ったまま合成（先端の厚みを保持）
+  //   刃先X は両面のうち峰側にある方にそろえ、先端の上下中点を原点にする
+  //   f = {prof, tipX, invertZ, reverseX}
+  function alignPair(fR, fL) {
+    if (fR.reverseX !== fL.reverseX) return null;
+    const rev = fR.reverseX;
+    const x0 = rev ? Math.max(fR.tipX, fL.tipX) : Math.min(fR.tipX, fL.tipX);
+    const zs = f => { const z = interp(f.prof.x, f.prof.z, x0); return f.invertZ ? -z : z; };
+    const zc = (zs(fR) + zs(fL)) / 2;
+    const one = f => {
+      const { x, z } = f.prof;
+      const out = [];
+      for (let i = 0; i < x.length; i++) {
+        const u = rev ? x0 - x[i] : x[i] - x0;
+        if (u > 0) continue;
+        out.push(u, (f.invertZ ? -z[i] : z[i]) - zc);
+      }
+      const m = out.length / 2;
+      const ax = new Float64Array(m), az = new Float64Array(m);
+      for (let i = 0; i < m; i++) { ax[i] = out[2 * i]; az[i] = out[2 * i + 1]; }
+      if (rev) { ax.reverse(); az.reverse(); }
+      // 端点を x=0 にそろえる（補間で先端点を追加）
+      if (m && ax[m - 1] < 0) {
+        const zt = (f.invertZ ? -interp(x, z, x0) : interp(x, z, x0)) - zc;
+        const bx = new Float64Array(m + 1), bz = new Float64Array(m + 1);
+        bx.set(ax); bz.set(az); bx[m] = 0; bz[m] = zt;
+        return { x: bx, z: bz };
+      }
+      return { x: ax, z: az };
+    };
+    return { R: one(fR), L: one(fL) };
+  }
+
   // 刃先から距離 [d0, d1] の区間で直線近似した傾き
   function fitSlope(p, d0, d1) {
     let n = 0, sx = 0, sz = 0, sxx = 0, sxz = 0;
@@ -390,7 +430,7 @@
 
   root.HasakiCore = {
     decodeText, parseProfile, guessSideAndKey, guessInvertZ, detectTip,
-    alignSide, buildSection, thicknessAt, includedAngle, interp, decimate, fitSlope,
+    alignSide, alignPair, buildSection, thicknessAt, includedAngle, interp, decimate, fitSlope,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
 
@@ -407,7 +447,7 @@
   const state = {
     sets: [],             // {id, name, color, visible, R: file|null, L: file|null}
     selectedId: null,     // 刃先確認グラフに表示するファイル
-    scale: 1,
+    scale: 5,
     range: 0,
     nextId: 1,
     pickTarget: null,     // クリックでファイル選択したときの投入先 {setId, side}
@@ -512,8 +552,10 @@
   function sections() {
     const level = $('levelOn').checked ? (parseFloat($('levelLen').value) || 0) : 0;
     for (const s of state.sets) {
-      const R = s.R && C.alignSide(s.R.prof, s.R.tipX, s.R.invertZ, s.R.reverseX);
-      const L = s.L && C.alignSide(s.L.prof, s.L.tipX, s.L.invertZ, s.L.reverseX);
+      // 既定: 測定座標の上下間隔を保持（先端の厚みを残す）。片面のみ・旧方式は各面の刃先を原点へ
+      const pair = $('alignMode').value === 'abs' && s.R && s.L ? C.alignPair(s.R, s.L) : null;
+      const R = pair ? pair.R : s.R && C.alignSide(s.R.prof, s.R.tipX, s.R.invertZ, s.R.reverseX);
+      const L = pair ? pair.L : s.L && C.alignSide(s.L.prof, s.L.tipX, s.L.invertZ, s.L.reverseX);
       s.sec = C.buildSection(R, L, level);
     }
     return state.sets;
@@ -522,7 +564,7 @@
   const complete = s => s.visible && s.sec && s.sec.R && s.sec.L;
 
   function distances() {
-    return $('distInput').value.split(/[,\s、，]+/).map(parseFloat).filter(v => Number.isFinite(v) && v > 0);
+    return $('distInput').value.split(/[,\s、，]+/).map(parseFloat).filter(v => Number.isFinite(v) && v >= 0);
   }
 
   // ---------- 描画 ----------
@@ -669,6 +711,15 @@
         });
       }
     }
+    // 先端の端面（右面の先端と左面の先端を結ぶ線）
+    for (const s of ss) {
+      if (!s.visible || !s.sec.R || !s.sec.L) continue;
+      const r = s.sec.R, l = s.sec.L, nr = r.x.length - 1, nl = l.x.length - 1;
+      const t = r.z[nr] - l.z[nl];
+      traces.push({ type: 'scatter', mode: 'lines', x: [r.x[nr], l.x[nl]], y: [r.z[nr], l.z[nl]], showlegend: false,
+        legendgroup: String(s.id), line: { color: s.color, width: 1.5, dash: 'dot' },
+        hovertemplate: `${esc(s.name)} 先端厚さ ${(t * 1000).toFixed(1)} µm<extra></extra>` });
+    }
     traces.push({ type: 'scatter', mode: 'markers', x: [0], y: [0], name: '刃先', showlegend: false,
       marker: { color: '#000', size: 7, symbol: 'x' }, hovertemplate: '刃先 (0, 0)<extra></extra>' });
     return traces;
@@ -731,7 +782,7 @@
       (s !== base ? `<th class="num">差 [µm]<br><span class="muted">対 ${esc(base.name)}</span></th>` : '')).join('') + '</tr>';
     for (const d of ds) {
       const tb = C.thicknessAt(base.sec, d);
-      h += `<tr><td class="num">${d}</td>` + pairs.map(s => {
+      h += `<tr><td class="num">${d === 0 ? '0（先端）' : d}</td>` + pairs.map(s => {
         const t = C.thicknessAt(s.sec, d), a = C.includedAngle(s.sec, d);
         const diff = (t - tb) * 1000;
         return `<td class="num">${Number.isFinite(t) ? t.toFixed(4) : '—'}</td><td class="num">${Number.isFinite(a) ? a.toFixed(2) : '—'}</td>` +
@@ -838,7 +889,8 @@
       const tb = C.thicknessAt(base.sec, d);
       rows.push([d, ...pairs.flatMap(s => {
         const t = C.thicknessAt(s.sec, d);
-        return [t.toFixed(5), C.includedAngle(s.sec, d).toFixed(3), ...(s !== base ? [((t - tb) * 1000).toFixed(2)] : [])];
+        const f = (v, k) => Number.isFinite(v) ? v.toFixed(k) : '';
+        return [f(t, 5), f(C.includedAngle(s.sec, d), 3), ...(s !== base ? [f((t - tb) * 1000, 2)] : [])];
       })]);
     }
     download(baseName() + '_厚み表.csv', rows.map(r => r.join(',')).join('\r\n'));
@@ -913,6 +965,7 @@
   };
   $('redetectAll').onclick = () => { allFiles().forEach(detect); refreshAll(); };
   $('levelOn').onchange = refreshPlots;
+  $('alignMode').onchange = refreshPlots;
   $('levelLen').onchange = refreshPlots;
   $('distInput').onchange = () => renderThickness(sections());
   $('thickLog').onchange = () => renderThickness(sections());

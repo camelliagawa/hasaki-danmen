@@ -169,6 +169,39 @@
     return { x: ax, z: az };
   }
 
+  // 右面・左面を測定座標の上下間隔を保ったまま合成（先端の厚みを保持）
+  //   刃先X は両面のうち峰側にある方にそろえ、先端の上下中点を原点にする
+  //   f = {prof, tipX, invertZ, reverseX}
+  function alignPair(fR, fL) {
+    if (fR.reverseX !== fL.reverseX) return null;
+    const rev = fR.reverseX;
+    const x0 = rev ? Math.max(fR.tipX, fL.tipX) : Math.min(fR.tipX, fL.tipX);
+    const zs = f => { const z = interp(f.prof.x, f.prof.z, x0); return f.invertZ ? -z : z; };
+    const zc = (zs(fR) + zs(fL)) / 2;
+    const one = f => {
+      const { x, z } = f.prof;
+      const out = [];
+      for (let i = 0; i < x.length; i++) {
+        const u = rev ? x0 - x[i] : x[i] - x0;
+        if (u > 0) continue;
+        out.push(u, (f.invertZ ? -z[i] : z[i]) - zc);
+      }
+      const m = out.length / 2;
+      const ax = new Float64Array(m), az = new Float64Array(m);
+      for (let i = 0; i < m; i++) { ax[i] = out[2 * i]; az[i] = out[2 * i + 1]; }
+      if (rev) { ax.reverse(); az.reverse(); }
+      // 端点を x=0 にそろえる（補間で先端点を追加）
+      if (m && ax[m - 1] < 0) {
+        const zt = (f.invertZ ? -interp(x, z, x0) : interp(x, z, x0)) - zc;
+        const bx = new Float64Array(m + 1), bz = new Float64Array(m + 1);
+        bx.set(ax); bz.set(az); bx[m] = 0; bz[m] = zt;
+        return { x: bx, z: bz };
+      }
+      return { x: ax, z: az };
+    };
+    return { R: one(fR), L: one(fL) };
+  }
+
   // 刃先から距離 [d0, d1] の区間で直線近似した傾き
   function fitSlope(p, d0, d1) {
     let n = 0, sx = 0, sz = 0, sxx = 0, sxz = 0;
@@ -229,6 +262,6 @@
 
   root.HasakiCore = {
     decodeText, parseProfile, guessSideAndKey, guessInvertZ, detectTip,
-    alignSide, buildSection, thicknessAt, includedAngle, interp, decimate, fitSlope,
+    alignSide, alignPair, buildSection, thicknessAt, includedAngle, interp, decimate, fitSlope,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
