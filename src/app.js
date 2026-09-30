@@ -18,7 +18,7 @@
   function addSet(name) {
     const used = new Set(state.sets.map(s => s.color));
     const color = COLORS.find(c => !used.has(c)) || COLORS[state.sets.length % COLORS.length];
-    const set = { id: state.nextId++, name: name || `セット${state.sets.length + 1}`, color, visible: true, R: null, L: null, dz: 0 };
+    const set = { id: state.nextId++, name: name || `セット${state.sets.length + 1}`, color, visible: true, R: null, L: null, dz: 0, rot: 0 };
     state.sets.push(set);
     return set;
   }
@@ -119,8 +119,10 @@
       const R = pair ? pair.R : s.R && C.alignSide(s.R.prof, s.R.tipX, s.R.invertZ, s.R.reverseX);
       const L = pair ? pair.L : s.L && C.alignSide(s.L.prof, s.L.tipX, s.L.invertZ, s.L.reverseX);
       s.sec0 = C.buildSection(R, L, level);
-      // Z方向の平行移動（セットごと）
-      s.sec = Object.assign({}, s.sec0, { R: C.shiftZ(s.sec0.R, s.dz), L: C.shiftZ(s.sec0.L, s.dz) });
+      // 傾き補正（原点まわりの回転）→ Z方向の平行移動（セットごと）
+      const a = s.rot * Math.PI / 180;
+      const rot = p => p && a ? C.rotate(p, a) : p;
+      s.sec = Object.assign({}, s.sec0, { R: C.shiftZ(rot(s.sec0.R), s.dz), L: C.shiftZ(rot(s.sec0.L), s.dz) });
     }
     return state.sets;
   }
@@ -138,14 +140,20 @@
     const base = baseSet();
     if (!base || base === s || !s.sec0 || !base.sec) return null;
     const [a, b] = matchRange();
-    const best = C.matchZ(base.sec, s.sec0, a, b);
+    const best = $('matchTilt').checked ? C.matchZTilt(base.sec, s.sec0, a, b) : Object.assign({ angle: s.rot * Math.PI / 180 }, C.matchZ(base.sec, rotSec(s), a, b));
     const cur = C.matchZ(base.sec, s.sec, a, b);
     return { best, cur, base };
   }
 
+  // 傾きのみ適用した断面（Z移動前）
+  function rotSec(s) {
+    const a = s.rot * Math.PI / 180;
+    return { R: s.sec0.R && (a ? C.rotate(s.sec0.R, a) : s.sec0.R), L: s.sec0.L && (a ? C.rotate(s.sec0.L, a) : s.sec0.L) };
+  }
+
   function autoMatch(s) {
     const m = matchInfo(s);
-    if (m && Number.isFinite(m.best.dz)) s.dz = m.best.dz;
+    if (m && Number.isFinite(m.best.dz)) { s.dz = m.best.dz; s.rot = m.best.angle * 180 / Math.PI; }
   }
 
   function distances() {
@@ -188,7 +196,9 @@
       <input type="number" class="dz" step="0.1" value="${(s.dz * 1000).toFixed(1)}" style="width:80px">
       <button class="small" data-z="plus">＋</button><span class="muted">µm</span>
       ${s === base ? '' : '<button class="small" data-z="auto" title="刃先から指定区間で基準セットに重なるよう自動で移動">自動合わせ</button>'}
-      <button class="small" data-z="zero">0</button>
+      <label style="margin-left:6px">傾き</label>
+      <input type="number" class="rot" step="0.001" value="${s.rot.toFixed(4)}" style="width:80px"><span class="muted">°</span>
+      <button class="small" data-z="zero" title="Z移動と傾きを0に戻す">リセット</button>
       ${info}</div>`;
   }
 
@@ -239,12 +249,14 @@
         refreshAll();
       });
       const dzIn = div.querySelector('.dz');
+      const rotIn = div.querySelector('.rot');
+      if (rotIn) rotIn.onchange = e => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) { s.rot = v; refreshAll(); } };
       if (dzIn) dzIn.onchange = e => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) { s.dz = v / 1000; refreshAll(); } };
       div.querySelectorAll('button[data-z]').forEach(b => b.onclick = () => {
         const step = parseFloat($('nudgeStep').value);
         if (b.dataset.z === 'minus') s.dz -= step;
         else if (b.dataset.z === 'plus') s.dz += step;
-        else if (b.dataset.z === 'zero') s.dz = 0;
+        else if (b.dataset.z === 'zero') { s.dz = 0; s.rot = 0; }
         else if (b.dataset.z === 'auto') autoMatch(s);
         refreshAll();
       });
@@ -581,6 +593,7 @@
   $('autoMatchAll').onclick = () => { sections(); state.sets.forEach(s => { if (s !== baseSet()) autoMatch(s); }); refreshAll(); };
   $('matchFrom').onchange = refreshAll;
   $('matchTo').onchange = refreshAll;
+  $('matchTilt').onchange = refreshAll;
   $('alignMode').onchange = refreshAll;
   $('levelLen').onchange = refreshAll;
   $('distInput').onchange = () => renderThickness(sections());

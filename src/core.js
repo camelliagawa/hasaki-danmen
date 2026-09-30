@@ -262,10 +262,35 @@
     return { dz, rms };
   }
 
+  // matchZ に加えて傾き（原点まわりの回転）も合わせる。返り値 {angle[rad], dz, rms}
+  //   微小回転では z' ≈ z + θ·x なので、差分 = dz + θ·x を最小二乗で求め、回転後に dz を再計算
+  function matchZTilt(base, sec, d0, d1) {
+    let n = 0, su = 0, sd = 0, suu = 0, sud = 0;
+    const N = 1000;
+    for (let i = 0; i <= N; i++) {
+      const u = -(d0 + (d1 - d0) * i / N);
+      for (const side of ['R', 'L']) {
+        if (!base[side] || !sec[side]) continue;
+        const v = interp(base[side].x, base[side].z, u) - interp(sec[side].x, sec[side].z, u);
+        if (Number.isFinite(v)) { n++; su += u; sd += v; suu += u * u; sud += u * v; }
+      }
+    }
+    const det = n * suu - su * su;
+    if (n < 3 || !det) return Object.assign({ angle: 0 }, matchZ(base, sec, d0, d1));
+    const angle = Math.atan((n * sud - su * sd) / det);
+    const rs = { R: sec.R && rotate(sec.R, angle), L: sec.L && rotate(sec.L, angle) };
+    return Object.assign({ angle }, matchZ(base, rs, d0, d1));
+  }
+
   // 刃先から距離 d の厚み（右面Z − 左面Z）
   function thicknessAt(sec, d) {
     if (!sec.R || !sec.L) return NaN;
-    return interp(sec.R.x, sec.R.z, -d) - interp(sec.L.x, sec.L.z, -d);
+    // 回転補正で先端点がわずかに x=0 からずれても、先端（距離0付近）は端点の値を使う
+    const at = (p, u) => {
+      const last = p.x.length - 1;
+      return u > p.x[last] && u - p.x[last] < 0.001 ? p.z[last] : interp(p.x, p.z, u);
+    };
+    return at(sec.R, -d) - at(sec.L, -d);
   }
 
   // 0〜d 区間の直線近似による刃角（両面のなす角）[°]
@@ -288,6 +313,6 @@
 
   root.HasakiCore = {
     decodeText, parseProfile, guessSideAndKey, guessInvertZ, detectTip,
-    alignSide, alignPair, buildSection, shiftZ, matchZ, thicknessAt, includedAngle, interp, decimate, fitSlope,
+    alignSide, alignPair, buildSection, shiftZ, matchZ, matchZTilt, rotate, thicknessAt, includedAngle, interp, decimate, fitSlope,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
