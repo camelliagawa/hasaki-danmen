@@ -54,29 +54,37 @@
   #plotTip { height: 340px; }
   .empty { color: var(--muted); padding: 30px; text-align: center; }
   #distInput { width: 100%; }
+  .set { border: 1px solid var(--border); border-left: 5px solid var(--c, var(--accent)); border-radius: 6px; padding: 8px; margin-top: 8px; }
+  .set.over { background: var(--drop); }
+  .set .head { display: flex; align-items: center; gap: 6px; }
+  .set .head input.name { font-weight: 600; width: 140px; }
+  .slots { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
+  .slot { border: 2px dashed var(--border); border-radius: 6px; padding: 6px; min-height: 54px; cursor: pointer; font-size: 12px; word-break: break-all; }
+  .slot:hover, .slot.over { border-color: var(--accent); background: var(--accent-weak); }
+  .slot.filled { border-style: solid; }
+  .slot b { display: block; font-size: 12px; color: var(--muted); }
+  .slot .empty-msg { color: var(--muted); }
+  #plotDiff { height: 320px; }
 </style>
 </head>
 <body>
-<div id="overlay">ここにドロップして読み込み</div>
+<div id="overlay">セットの枠の上でドロップしてください（枠の外は空いているセットへ）</div>
 <header>
   <h1>刃先断面ビューア</h1>
-  <span class="hint">右面・左面の測定ファイル（.txt）をウィンドウへドラッグ＆ドロップ → 刃先を原点に合わせて断面を表示</span>
+  <span class="hint">研磨前・研磨後などのセットごとに右面・左面の測定ファイル（.txt）をドロップ → 刃先を原点に合わせて断面を重ねて比較</span>
 </header>
 <main>
   <div>
     <section class="card">
-      <div id="dropzone">ファイルをドロップ、またはクリックして選択<br><span class="muted">複数ファイル可（右面＋左面で1本。複数本も可）</span></div>
+      <h2>測定セット<span class="sp"></span><button class="small" id="addSet">＋ セット追加</button><button class="small" id="clearAll">全て削除</button></h2>
+      <div class="muted">各セットの枠に右面・左面の2ファイルをまとめてドロップ（ファイル名の _r / _l で自動振り分け）。「右面」「左面」の枠に直接ドロップ・クリックして個別に入れ替えも可。</div>
+      <div id="setList"></div>
       <input type="file" id="fileInput" multiple accept=".txt,.csv,.dat" hidden>
     </section>
 
     <section class="card">
-      <h2>包丁一覧<span class="sp"></span><button class="small" id="clearAll">全て削除</button></h2>
-      <div id="knifeList"><div class="muted">未読込</div></div>
-    </section>
-
-    <section class="card">
-      <h2>ファイル（刃先位置の調整）</h2>
-      <div class="muted">包丁名が同じ右面＋左面がペアになります。刃先Xは自動検出値。数値入力・±ボタン・下の「刃先確認」グラフのクリックで調整できます。</div>
+      <h2>刃先位置の調整</h2>
+      <div class="muted">刃先Xは自動検出値。数値入力・±ボタン・下の「刃先確認」グラフのクリックで調整できます。</div>
       <div class="ctrl"><label>±ボタンの刻み</label>
         <select id="nudgeStep"><option value="0.0001">0.1 µm</option><option value="0.001" selected>1 µm</option><option value="0.01">10 µm</option><option value="0.1">100 µm</option></select>
         <label>検出しきい角</label><input type="number" id="detAngle" value="40" min="5" max="85" step="1" style="width:60px">°
@@ -122,6 +130,12 @@
     <section class="card">
       <h2>厚み曲線<span class="sp"></span><label class="muted"><input type="checkbox" id="thickLog" checked> 横軸を対数</label><button class="small" id="pngThick">PNG保存</button></h2>
       <div id="plotThick" class="plot"></div>
+    </section>
+
+    <section class="card" id="diffCard" hidden>
+      <h2>厚みの変化（基準セットとの差）<span class="sp"></span><button class="small" id="pngDiff">PNG保存</button></h2>
+      <div class="muted">差 = 各セットの厚み − 基準セット（一番上の、右面・左面がそろったセット）の厚み。マイナスは薄くなった量。</div>
+      <div id="plotDiff" class="plot"></div>
     </section>
 
     <section class="card">
