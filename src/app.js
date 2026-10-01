@@ -122,7 +122,7 @@
       note: { label: '拡大表示の注記（{倍率}は倍率）', show: false, text: '厚み方向 ×{倍率} 拡大表示' },
       tick: { label: '目盛の数値', show: true },
       xr: { label: 'X軸の数値', axis: { min: '', max: '', dtick: '', digits: '' } },
-      yr: { label: 'Y軸の数値', axis: { min: '', max: '', dtick: '0.5', digits: '' } },
+      yr: { label: 'Y軸の数値', axis: { min: '', max: '0.4', dtick: '0.2', digits: '' } },
       font: { label: '文字サイズ', num: 12 },
     },
     thick: {
@@ -528,7 +528,8 @@
     if (state.scale !== 1 && state.scale > 0 && note) {
       layout.annotations = [{ text: esc(note.replace(/\{倍率\}/g, state.scale)), xref: 'paper', yref: 'paper', x: 1, y: 0, xanchor: 'right', yanchor: 'bottom', showarrow: false, font: { color: '#b45309' } }];
     }
-    Plotly.react(el, sectionTraces(ss), layout, plotCfg);
+    // 縦横比固定（scaleanchor）時は Plotly.react だと手入力の軸範囲が反映されないため毎回描き直す
+    Plotly.newPlot(el, sectionTraces(ss), layout, plotCfg);
   }
 
   // 厚み曲線用のサンプル距離（対数 or 等間隔）
