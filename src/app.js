@@ -18,7 +18,8 @@
   function addSet(name) {
     const used = new Set(state.sets.map(s => s.color));
     const color = COLORS.find(c => !used.has(c)) || COLORS[state.sets.length % COLORS.length];
-    const set = { id: state.nextId++, name: name || `セット${state.sets.length + 1}`, color, visible: true, R: null, L: null, dz: 0, rot: 0 };
+    const set = { id: state.nextId++, name: name || `セット${state.sets.length + 1}`, color, visible: true, R: null, L: null, dz: 0, rot: 0,
+      dash: name === '研磨前' ? 'dash' : 'solid' };   // 線の種類（両面共通）
     state.sets.push(set);
     return set;
   }
@@ -308,6 +309,8 @@
         <div class="head">
           <input type="checkbox" class="vis" ${s.visible ? 'checked' : ''} title="表示">
           <input type="color" class="col" value="${s.color}" style="width:26px;height:20px;padding:0;border:none" title="色">
+          <select class="dash" title="線の種類（右面・左面共通）">${[['solid', '実線'], ['dash', '破線'], ['dot', '点線'], ['dashdot', '一点鎖線']]
+            .map(([v, t]) => `<option value="${v}" ${s.dash === v ? 'selected' : ''}>${t}</option>`).join('')}</select>
           <input type="text" class="name" value="${esc(s.name)}" title="セット名（凡例に表示）">
           <button class="small" data-act="swap" title="右面と左面を入れ替え">左右入替</button>
           ${state.sets.indexOf(s) > 0 ? '<button class="small" data-act="up" title="ファイル（とZ移動・傾き）を上のセットと入れ替え。セット名・色はそのまま">⇅上と入替</button>' : ''}
@@ -322,6 +325,7 @@
     el.querySelectorAll('.set').forEach(div => {
       const s = state.sets.find(v => v.id === +div.dataset.set);
       div.querySelector('.vis').onchange = e => { s.visible = e.target.checked; refreshPlots(); };
+      div.querySelector('.dash').onchange = e => { s.dash = e.target.value; refreshPlots(); };
       div.querySelector('.col').oninput = e => { s.color = e.target.value; div.style.setProperty('--c', s.color); refreshPlots(); };
       div.querySelector('.name').onchange = e => { s.name = e.target.value.trim() || s.name; refreshAll(); };
       div.querySelectorAll('button[data-act]').forEach(b => b.onclick = () => {
@@ -433,11 +437,12 @@
       for (const side of ['R', 'L']) {
         const p = s.sec[side];
         if (!p) continue;
-        const d = C.decimate(p, 20000, 0.3);
+        // 破線を正しく描くため SVG 描画（scatter）。点数は間引き、刃先近傍 0.3mm は全点
+        const d = C.decimate(p, 6000, 0.3);
         traces.push({
-          type: 'scattergl', mode: 'lines', x: d.x, y: d.z,
+          type: 'scatter', mode: 'lines', x: d.x, y: d.z,
           name: [s.name, labels.section[side === 'R' ? 'faceR' : 'faceL'].text].filter(Boolean).join(' '), legendgroup: String(s.id),
-          line: { color: s.color, width: 1.5, dash: side === 'L' ? 'dash' : 'solid' },
+          line: { color: s.color, width: s.dash === 'solid' ? 1.5 : 2, dash: s.dash },
           hovertemplate: `${esc(s.name)} ${SIDE_JP[side]}<br>X=%{x:.4f} mm<br>Z=%{y:.4f} mm<extra></extra>`,
         });
       }
@@ -448,7 +453,7 @@
       const r = s.sec.R, l = s.sec.L, nr = r.x.length - 1, nl = l.x.length - 1;
       const t = r.z[nr] - l.z[nl];
       traces.push({ type: 'scatter', mode: 'lines', x: [r.x[nr], l.x[nl]], y: [r.z[nr], l.z[nl]], showlegend: false,
-        legendgroup: String(s.id), line: { color: s.color, width: 1.5, dash: 'dot' },
+        legendgroup: String(s.id), line: { color: s.color, width: 1.5, dash: s.dash === 'solid' ? 'dot' : s.dash },
         hovertemplate: `${esc(s.name)} 先端厚さ ${(t * 1000).toFixed(1)} µm<extra></extra>` });
     }
     traces.push({ type: 'scatter', mode: 'markers', x: [0], y: [0], name: '刃先', showlegend: false,
