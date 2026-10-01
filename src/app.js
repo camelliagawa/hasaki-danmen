@@ -119,8 +119,6 @@
       x: { label: 'X軸の名前', show: true, text: '刃先からの位置 X [mm]（峰側 ← → 刃先）' },
       y: { label: 'Y軸の名前', show: true, text: 'Z [mm]（上: 右面 / 下: 左面）' },
       legend: { label: '凡例', show: true },
-      faceR: { label: '凡例の「右面」', text: '右面' },
-      faceL: { label: '凡例の「左面」', text: '左面' },
       note: { label: '拡大表示の注記（{倍率}は倍率）', show: true, text: '厚み方向 ×{倍率} 拡大表示' },
       tick: { label: '目盛の数値', show: true },
       font: { label: '文字サイズ', num: 12 },
@@ -430,6 +428,8 @@
     refreshAll();
   }
 
+  const p0 = p => p && p.x.length > 0;
+
   function sectionTraces(ss) {
     const traces = [];
     for (const s of ss) {
@@ -441,7 +441,8 @@
         const d = C.decimate(p, 6000, 0.3);
         traces.push({
           type: 'scatter', mode: 'lines', x: d.x, y: d.z,
-          name: [s.name, labels.section[side === 'R' ? 'faceR' : 'faceL'].text].filter(Boolean).join(' '), legendgroup: String(s.id),
+          // 凡例はセットごとに1項目（右面のみ表示、左面は同じグループでまとめて表示切替）
+          name: s.name, legendgroup: String(s.id), showlegend: side === 'R' || !p0(s.sec.R),
           line: { color: s.color, width: s.dash === 'solid' ? 1.5 : 2, dash: s.dash },
           hovertemplate: `${esc(s.name)} ${SIDE_JP[side]}<br>X=%{x:.4f} mm<br>Z=%{y:.4f} mm<extra></extra>`,
         });
