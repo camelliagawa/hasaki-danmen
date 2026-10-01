@@ -70,14 +70,14 @@
   .slot .empty-msg { color: var(--muted); }
   #plotDiff { height: 320px; }
   .lblPanel { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; margin-bottom: 8px; }
-  .lblPanel .ctrl { margin: 4px 0; flex-wrap: nowrap; }
+  .lblPanel .ctrl { margin: 4px 0; flex-wrap: wrap; }
 </style>
 </head>
 <body>
 <div id="overlay">セットの枠の上でドロップしてください（枠の外は空いているセットへ）</div>
 <header>
   <h1>刃先断面ビューア</h1>
-  <span class="ver">最終更新: 2026-10-01 10:55</span>
+  <span class="ver">最終更新: 2026-10-01 11:06</span>
   <span class="hint">研磨前・研磨後などのセットごとに右面・左面の測定ファイル（.txt）をドロップ → 刃先を原点に合わせて断面を重ねて比較</span>
 </header>
 <main>
@@ -648,6 +648,8 @@
       legend: { label: '凡例', show: true },
       note: { label: '拡大表示の注記（{倍率}は倍率）', show: true, text: '厚み方向 ×{倍率} 拡大表示' },
       tick: { label: '目盛の数値', show: true },
+      xr: { label: 'X軸の数値', axis: { min: '', max: '', dtick: '', digits: '' } },
+      yr: { label: 'Y軸の数値', axis: { min: '', max: '', dtick: '0.5', digits: '' } },
       font: { label: '文字サイズ', num: 12 },
     },
     thick: {
@@ -656,6 +658,8 @@
       y: { label: 'Y軸の名前', show: true, text: '厚み [mm]' },
       legend: { label: '凡例', show: true },
       tick: { label: '目盛の数値', show: true },
+      xr: { label: 'X軸の数値', axis: { min: '', max: '', dtick: '', digits: '' } },
+      yr: { label: 'Y軸の数値', axis: { min: '', max: '', dtick: '', digits: '' } },
       font: { label: '文字サイズ', num: 12 },
     },
     diff: {
@@ -665,6 +669,8 @@
       legend: { label: '凡例', show: true },
       series: { label: '凡例の文言（{セット名} {基準}）', text: '{セット名} − {基準}' },
       tick: { label: '目盛の数値', show: true },
+      xr: { label: 'X軸の数値', axis: { min: '', max: '', dtick: '', digits: '' } },
+      yr: { label: 'Y軸の数値', axis: { min: '', max: '', dtick: '', digits: '' } },
       font: { label: '文字サイズ', num: 12 },
     },
   };
@@ -672,7 +678,11 @@
   const labels = JSON.parse(JSON.stringify(LABEL_DEFS));
   try {
     const saved = JSON.parse(localStorage.getItem(LABEL_KEY) || '{}');
-    for (const g in labels) for (const k in labels[g]) if (saved[g] && saved[g][k]) Object.assign(labels[g][k], saved[g][k]);
+    for (const g in labels) for (const k in labels[g]) if (saved[g] && saved[g][k]) {
+      const ax = labels[g][k].axis;
+      Object.assign(labels[g][k], saved[g][k]);
+      if (ax) labels[g][k].axis = Object.assign({}, ax, saved[g][k].axis);
+    }
   } catch (e) { /* 保存領域が使えない環境では既定値 */ }
   function saveLabels() { try { localStorage.setItem(LABEL_KEY, JSON.stringify(labels)); } catch (e) { /* 無視 */ } }
 
@@ -689,6 +699,25 @@
     layout.xaxis.showticklabels = layout.yaxis.showticklabels = L.tick.show !== false;
     layout.showlegend = L.legend.show !== false;
     layout.font = { size: L.font.num };
+    // 軸の数値（空欄は自動）。対数軸の最小・最大は実数で指定（目盛間隔は対数軸では無視）
+    for (const [k, axName] of [['xr', 'xaxis'], ['yr', 'yaxis']]) {
+      const a = L[k] && L[k].axis, ax = layout[axName];
+      if (!a || !ax) continue;
+      const num = v => { const n = parseFloat(v); return Number.isFinite(n) ? n : null; };
+      const log = ax.type === 'log';
+      const conv = v => v === null ? null : log ? (v > 0 ? Math.log10(v) : null) : v;
+      const mn = conv(num(a.min)), mx = conv(num(a.max));
+      if (mn !== null || mx !== null) {
+        const cur = ax.range;
+        if (mn !== null && mx !== null) ax.range = [mn, mx];
+        else if (cur) ax.range = [mn !== null ? mn : cur[0], mx !== null ? mx : cur[1]];
+        if (ax.range) ax.autorange = false;
+      }
+      const dt = num(a.dtick);
+      if (dt && dt > 0 && !log) { ax.tickmode = 'linear'; ax.tick0 = 0; ax.dtick = dt; }
+      const dg = num(a.digits);
+      if (dg !== null && dg >= 0) ax.tickformat = log ? `.${Math.round(dg)}~f` : `.${Math.round(dg)}f`;
+    }
     return layout;
   }
 
@@ -700,7 +729,9 @@
         <label style="min-width:150px">${esc(it.label)}</label>
         ${'text' in it ? `<input type="text" class="ltext" value="${esc(it.text)}" style="flex:1;min-width:160px">` : ''}
         ${'num' in it ? `<input type="number" class="lnum" value="${it.num}" min="6" max="40" step="1" style="width:60px"> px` : ''}
-      </div>`).join('') + '<div class="ctrl"><button class="small lreset">初期値に戻す</button><span class="muted">設定はこのブラウザに保存されます</span></div>';
+        ${'axis' in it ? [['min', '最小'], ['max', '最大'], ['dtick', '間隔'], ['digits', '小数桁']].map(([f, t]) =>
+          `<span class="muted">${t}</span><input type="text" class="lax" data-f="${f}" value="${esc(it.axis[f])}" placeholder="自動" style="width:58px">`).join('') : ''}
+      </div>`).join('') + '<div class="ctrl"><button class="small lreset">初期値に戻す</button><span class="muted">設定はこのブラウザに保存されます。軸の数値は空欄で自動（単位はグラフの軸と同じ）</span></div>';
     el.querySelectorAll('[data-k]').forEach(row => {
       const it = labels[g][row.dataset.k];
       const on = () => { saveLabels(); refreshPlots(); };
@@ -708,6 +739,7 @@
       if (cb) cb.onchange = () => { it.show = cb.checked; on(); };
       if (tx) tx.oninput = () => { it.text = tx.value; on(); };
       if (nm) nm.onchange = () => { const v = parseFloat(nm.value); if (Number.isFinite(v)) { it.num = v; on(); } };
+      row.querySelectorAll('.lax').forEach(inp => inp.onchange = () => { it.axis[inp.dataset.f] = inp.value.trim(); on(); });
     });
     el.querySelector('.lreset').onclick = () => {
       labels[g] = JSON.parse(JSON.stringify(LABEL_DEFS[g]));
@@ -1221,7 +1253,12 @@
     });
   }
   toggleGroup('scaleBtns', 's', v => state.scale = v);
-  toggleGroup('rangeBtns', 'r', v => state.range = v);
+  toggleGroup('rangeBtns', 'r', v => {
+    state.range = v;
+    // 表示範囲ボタンを押したら、断面グラフのX軸の最小・最大の手入力は解除
+    const a = labels.section.xr.axis;
+    if (a.min || a.max) { a.min = a.max = ''; saveLabels(); renderLabelPanel('section'); }
+  });
 
   $('addSet').onclick = () => { addSet(); refreshAll(); };
   $('clearAll').onclick = () => {
