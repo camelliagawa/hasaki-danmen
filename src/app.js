@@ -38,8 +38,9 @@
     const t = Date.parse(prof.meta.DateTime || '');
     const file = {
       id: state.nextId++, name: f.name, prof, key: g.key, side: g.side,
-      invertZ: C.guessInvertZ(g.side, prof.meta), reverseX: false, time: Number.isFinite(t) ? t : null,
+      reverseX: false, time: Number.isFinite(t) ? t : null,
     };
+    Object.assign(file, C.guessZ(g.side, prof.meta));
     detect(file);
     return file;
   }
@@ -55,7 +56,7 @@
 
   function place(set, side, file) {
     file.side = side;
-    file.invertZ = C.guessInvertZ(side, file.prof.meta);
+    Object.assign(file, C.guessZ(side, file.prof.meta));
     set[side] = file;
     state.selectedId = file.id;
   }
@@ -184,6 +185,14 @@
 
   function fmtTime(f) { return f.prof.meta.DateTime ? esc(f.prof.meta.DateTime) : ''; }
 
+  // 先端の上下間隔が不自然（負 or 5mm超）なら警告
+  function gapWarn(s) {
+    if ($('alignMode').value !== 'abs' || !s.sec0 || !s.sec0.R || !s.sec0.L) return '';
+    const t = C.thicknessAt(s.sec0, 0);
+    if (!Number.isFinite(t) || (t > -0.005 && t < 5)) return '';
+    return `<div class="warn" style="color:var(--warn);font-size:12px">先端の厚みが ${t.toFixed(3)} mm と不自然です。「刃先位置の調整」欄の Z反転・Z補正 を確認してください。</div>`;
+  }
+
   function zRow(s) {
     if (!s.sec0 || !(s.sec0.R || s.sec0.L)) return '';
     const base = baseSet();
@@ -222,7 +231,7 @@
           <button class="small" data-act="up" title="上へ（一番上のそろったセットが差分の基準）">↑</button>
           <button class="small" data-act="del">削除</button>
         </div>
-        <div class="slots">${slot('R')}${slot('L')}</div>${warn}
+        <div class="slots">${slot('R')}${slot('L')}</div>${warn}${gapWarn(s)}
         ${zRow(s)}
       </div>`;
     }).join('');
@@ -283,6 +292,8 @@
           <button class="small" data-act="auto">自動</button>
           <label class="muted"><input type="checkbox" class="inv" ${f.invertZ ? 'checked' : ''}>Z反転</label>
           <label class="muted" title="刃先側から峰側へ測定したデータの場合にチェック"><input type="checkbox" class="rev" ${f.reverseX ? 'checked' : ''}>刃先→峰</label>
+          <label class="muted" title="上下面の間隔（厚み）を正しくするためのZ補正。逆向き触針で座標系が反転されずに保存されたファイルは自動で ${C.REVERSE_Z_OFFSET} mm">Z補正</label>
+          <input type="number" class="zoff" step="0.001" value="${(f.zOffset || 0).toFixed(3)}" style="width:80px"><span class="muted">mm</span>
         </div>
         <div class="muted">${f.tipX === f.autoTipX ? '自動検出値' : `手動調整（自動: ${f.autoTipX.toFixed(4)}, 差 ${((f.tipX - f.autoTipX) * 1000).toFixed(1)} µm）`}
           ／ ${f.prof.x.length.toLocaleString()} 点, X ${f.prof.x[0].toFixed(3)}〜${f.prof.x[f.prof.x.length - 1].toFixed(3)} mm</div>
@@ -292,7 +303,8 @@
     el.querySelectorAll('.file').forEach(div => {
       const f = findFile(+div.dataset.id);
       const q = s => div.querySelector(s);
-      q('.inv').onchange = e => { f.invertZ = e.target.checked; refreshPlots(); };
+      q('.inv').onchange = e => { f.invertZ = e.target.checked; refreshAll(); };
+      q('.zoff').onchange = e => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) { f.zOffset = v; refreshAll(); } };
       q('.rev').onchange = e => { f.reverseX = e.target.checked; detect(f); refreshAll(); };
       q('.tip').onchange = e => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) setTip(f, v); };
       div.querySelectorAll('button[data-act]').forEach(b => b.onclick = () => {

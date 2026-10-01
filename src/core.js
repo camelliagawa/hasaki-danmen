@@ -56,12 +56,33 @@
     return { side: side || 'R', key };
   }
 
-  // 左面（下から測定・触針逆向き）は Z の符号が反転しているのが既定
-  function guessInvertZ(side, meta) {
-    if (meta && meta.ContactDirection === 'ZPositive') return true;
-    if (meta && meta.ContactDirection === 'ZNegative') return false;
-    return side === 'L';
+  // 逆向き触針（下から測定）の高さ補正量 [mm]
+  //   上向き触針: Z = 軸位置Z + 11.375 + ゲージ値（全ファイルで一致）
+  //   逆向き触針の真の高さ: 軸位置Z + 27.411 + ゲージ値（座標系が反転保存されたファイルから算出）
+  //   座標系が反転されずに保存された逆向き触針ファイルは、この差を足すと上面と同じ座標系になる
+  const REVERSE_Z_OFFSET = 16.036;
+
+  // 座標系（CoordinateSystemToProfileTransformation の回転）が上下反転しているか
+  function isFlipped(meta) {
+    const t = meta && (meta.CoordinateSystemToProfileTransformation || meta.Met4CoordinateSystemToProfileTransformation);
+    if (!t) return null;
+    const v = t.split(',').map(parseFloat);
+    if (v.length < 7 || v.some(n => !Number.isFinite(n))) return null;
+    return Math.abs(v[3]) > 0.5;   // 回転成分 (x, y, z, w) の x≈1 → X軸まわり180°
   }
+
+  // 高さ（上が正）への変換方法を推定: height = (invertZ ? -z : z) + zOffset
+  function guessZ(side, meta) {
+    const reverse = meta && (meta.StylusTipName === 'Reverse' || meta.GaugeBias === 'Reverse');
+    const flip = isFlipped(meta);
+    if (flip === true) return { invertZ: true, zOffset: 0 };
+    if (flip === false) return { invertZ: false, zOffset: reverse ? REVERSE_Z_OFFSET : 0 };
+    // 座標系情報がない場合
+    if (meta && meta.ContactDirection === 'ZPositive') return { invertZ: true, zOffset: 0 };
+    if (meta && meta.ContactDirection === 'ZNegative') return { invertZ: false, zOffset: 0 };
+    return { invertZ: side === 'L', zOffset: 0 };
+  }
+  const guessInvertZ = (side, meta) => guessZ(side, meta).invertZ;
 
   // ---------- 刃先検出 ----------
 
@@ -171,12 +192,13 @@
 
   // 右面・左面を測定座標の上下間隔を保ったまま合成（先端の厚みを保持）
   //   刃先X は両面のうち峰側にある方にそろえ、先端の上下中点を原点にする
-  //   f = {prof, tipX, invertZ, reverseX}
+  //   f = {prof, tipX, invertZ, zOffset, reverseX}
   function alignPair(fR, fL) {
     if (fR.reverseX !== fL.reverseX) return null;
     const rev = fR.reverseX;
     const x0 = rev ? Math.max(fR.tipX, fL.tipX) : Math.min(fR.tipX, fL.tipX);
-    const zs = f => { const z = interp(f.prof.x, f.prof.z, x0); return f.invertZ ? -z : z; };
+    const h = (f, z) => (f.invertZ ? -z : z) + (f.zOffset || 0);
+    const zs = f => h(f, interp(f.prof.x, f.prof.z, x0));
     const zc = (zs(fR) + zs(fL)) / 2;
     const one = f => {
       const { x, z } = f.prof;
@@ -184,7 +206,7 @@
       for (let i = 0; i < x.length; i++) {
         const u = rev ? x0 - x[i] : x[i] - x0;
         if (u > 0) continue;
-        out.push(u, (f.invertZ ? -z[i] : z[i]) - zc);
+        out.push(u, h(f, z[i]) - zc);
       }
       const m = out.length / 2;
       const ax = new Float64Array(m), az = new Float64Array(m);
@@ -192,7 +214,7 @@
       if (rev) { ax.reverse(); az.reverse(); }
       // 端点を x=0 にそろえる（補間で先端点を追加）
       if (m && ax[m - 1] < 0) {
-        const zt = (f.invertZ ? -interp(x, z, x0) : interp(x, z, x0)) - zc;
+        const zt = zs(f) - zc;
         const bx = new Float64Array(m + 1), bz = new Float64Array(m + 1);
         bx.set(ax); bz.set(az); bx[m] = 0; bz[m] = zt;
         return { x: bx, z: bz };
@@ -312,7 +334,7 @@
   }
 
   root.HasakiCore = {
-    decodeText, parseProfile, guessSideAndKey, guessInvertZ, detectTip,
+    decodeText, parseProfile, guessSideAndKey, guessInvertZ, guessZ, REVERSE_Z_OFFSET, detectTip,
     alignSide, alignPair, buildSection, shiftZ, matchZ, matchZTilt, rotate, thicknessAt, includedAngle, interp, decimate, fitSlope,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
