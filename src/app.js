@@ -116,10 +116,10 @@
   const LABEL_DEFS = {
     section: {
       title: { label: 'タイトル', show: false, text: '包丁断面' },
-      x: { label: 'X軸の名前', show: true, text: '刃先からの位置 X [mm]（峰側 ← → 刃先）' },
-      y: { label: 'Y軸の名前', show: true, text: 'Z [mm]（上: 右面 / 下: 左面）' },
+      x: { label: 'X軸の名前', show: true, text: 'Distance / mm' },
+      y: { label: 'Y軸の名前', show: true, text: 'Blade thickness / mm' },
       legend: { label: '凡例', show: true },
-      note: { label: '拡大表示の注記（{倍率}は倍率）', show: true, text: '厚み方向 ×{倍率} 拡大表示' },
+      note: { label: '拡大表示の注記（{倍率}は倍率）', show: false, text: '厚み方向 ×{倍率} 拡大表示' },
       tick: { label: '目盛の数値', show: true },
       xr: { label: 'X軸の数値', axis: { min: '', max: '', dtick: '', digits: '' } },
       yr: { label: 'Y軸の数値', axis: { min: '', max: '', dtick: '0.5', digits: '' } },
@@ -172,6 +172,8 @@
     layout.xaxis.showticklabels = layout.yaxis.showticklabels = L.tick.show !== false;
     layout.showlegend = L.legend.show !== false;
     layout.font = { size: L.font.num };
+    // 背景は透明（PNG保存時も透明。画面上はカードの白地が透ける）
+    layout.paper_bgcolor = layout.plot_bgcolor = 'rgba(0,0,0,0)';
     // 軸の数値（空欄は自動）。対数軸の最小・最大は実数で指定（目盛間隔は対数軸では無視）
     for (const [k, axName] of [['xr', 'xaxis'], ['yr', 'yaxis']]) {
       const a = L[k] && L[k].axis, ax = layout[axName];
@@ -638,6 +640,16 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
 
+  // PNG保存（背景透明・2倍解像度）。ファイル名を確実に付けるため自前でダウンロード
+  async function savePng(id, name) {
+    const dataUrl = await Plotly.toImage($(id), { format: 'png', scale: 2 });
+    const blob = await (await fetch(dataUrl)).blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = safe(name) + '.png';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
   function safe(s) { return String(s).replace(/[\\/:*?"<>|]/g, '_'); }
 
   function baseName() {
@@ -646,9 +658,9 @@
     return safe(key + state.sets.filter(s => s.visible && (s.R || s.L)).map(s => s.name).join('_') || 'danmen');
   }
 
-  $('pngSection').onclick = () => Plotly.downloadImage($('plotSection'), { format: 'png', scale: 2, filename: baseName() + '_断面' });
-  $('pngThick').onclick = () => Plotly.downloadImage($('plotThick'), { format: 'png', scale: 2, filename: baseName() + '_厚み' });
-  $('pngDiff').onclick = () => Plotly.downloadImage($('plotDiff'), { format: 'png', scale: 2, filename: baseName() + '_厚み差' });
+  $('pngSection').onclick = () => savePng('plotSection', baseName() + '_断面');
+  $('pngThick').onclick = () => savePng('plotThick', baseName() + '_厚み');
+  $('pngDiff').onclick = () => savePng('plotDiff', baseName() + '_厚み差');
 
   $('csvTable').onclick = () => {
     const pairs = sections().filter(complete);
