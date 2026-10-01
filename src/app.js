@@ -110,6 +110,89 @@
     file.found = r.found;
   }
 
+  // ---------- グラフの表記（表示/非表示・文言）----------
+  //   item: {label, text?, show?, num?}  text を持つ項目は文言を編集可、show を持つ項目は表示切替可
+  const LABEL_DEFS = {
+    section: {
+      title: { label: 'タイトル', show: false, text: '包丁断面' },
+      x: { label: 'X軸の名前', show: true, text: '刃先からの位置 X [mm]（峰側 ← → 刃先）' },
+      y: { label: 'Y軸の名前', show: true, text: 'Z [mm]（上: 右面 / 下: 左面）' },
+      legend: { label: '凡例', show: true },
+      faceR: { label: '凡例の「右面」', text: '右面' },
+      faceL: { label: '凡例の「左面」', text: '左面' },
+      note: { label: '拡大表示の注記（{倍率}は倍率）', show: true, text: '厚み方向 ×{倍率} 拡大表示' },
+      tick: { label: '目盛の数値', show: true },
+      font: { label: '文字サイズ', num: 12 },
+    },
+    thick: {
+      title: { label: 'タイトル', show: false, text: '厚み曲線' },
+      x: { label: 'X軸の名前', show: true, text: '刃先からの距離 [mm]' },
+      y: { label: 'Y軸の名前', show: true, text: '厚み [mm]' },
+      legend: { label: '凡例', show: true },
+      tick: { label: '目盛の数値', show: true },
+      font: { label: '文字サイズ', num: 12 },
+    },
+    diff: {
+      title: { label: 'タイトル', show: false, text: '厚みの変化' },
+      x: { label: 'X軸の名前', show: true, text: '刃先からの距離 [mm]' },
+      y: { label: 'Y軸の名前', show: true, text: '厚みの差 [µm]' },
+      legend: { label: '凡例', show: true },
+      series: { label: '凡例の文言（{セット名} {基準}）', text: '{セット名} − {基準}' },
+      tick: { label: '目盛の数値', show: true },
+      font: { label: '文字サイズ', num: 12 },
+    },
+  };
+  const LABEL_KEY = 'hasaki-danmen-labels';
+  const labels = JSON.parse(JSON.stringify(LABEL_DEFS));
+  try {
+    const saved = JSON.parse(localStorage.getItem(LABEL_KEY) || '{}');
+    for (const g in labels) for (const k in labels[g]) if (saved[g] && saved[g][k]) Object.assign(labels[g][k], saved[g][k]);
+  } catch (e) { /* 保存領域が使えない環境では既定値 */ }
+  function saveLabels() { try { localStorage.setItem(LABEL_KEY, JSON.stringify(labels)); } catch (e) { /* 無視 */ } }
+
+  const lblText = (g, k) => { const it = labels[g][k]; return it.show === false ? '' : it.text; };
+
+  // 表記設定をレイアウトに反映
+  function applyLabels(g, layout) {
+    const L = labels[g];
+    const t = lblText(g, 'title');
+    layout.title = t ? { text: t, x: 0.5, xanchor: 'center' } : undefined;
+    layout.margin = Object.assign({}, layout.margin, { t: t ? 40 + L.font.num : 10 });
+    layout.xaxis.title = { text: lblText(g, 'x') };
+    layout.yaxis.title = { text: lblText(g, 'y') };
+    layout.xaxis.showticklabels = layout.yaxis.showticklabels = L.tick.show !== false;
+    layout.showlegend = L.legend.show !== false;
+    layout.font = { size: L.font.num };
+    return layout;
+  }
+
+  function renderLabelPanel(g) {
+    const el = $('lbl_' + g);
+    el.innerHTML = Object.entries(labels[g]).map(([k, it]) => `
+      <div class="ctrl" data-k="${k}">
+        ${'show' in it ? `<input type="checkbox" class="lshow" ${it.show ? 'checked' : ''} title="表示する">` : '<span style="width:13px;display:inline-block"></span>'}
+        <label style="min-width:150px">${esc(it.label)}</label>
+        ${'text' in it ? `<input type="text" class="ltext" value="${esc(it.text)}" style="flex:1;min-width:160px">` : ''}
+        ${'num' in it ? `<input type="number" class="lnum" value="${it.num}" min="6" max="40" step="1" style="width:60px"> px` : ''}
+      </div>`).join('') + '<div class="ctrl"><button class="small lreset">初期値に戻す</button><span class="muted">設定はこのブラウザに保存されます</span></div>';
+    el.querySelectorAll('[data-k]').forEach(row => {
+      const it = labels[g][row.dataset.k];
+      const on = () => { saveLabels(); refreshPlots(); };
+      const cb = row.querySelector('.lshow'), tx = row.querySelector('.ltext'), nm = row.querySelector('.lnum');
+      if (cb) cb.onchange = () => { it.show = cb.checked; on(); };
+      if (tx) tx.oninput = () => { it.text = tx.value; on(); };
+      if (nm) nm.onchange = () => { const v = parseFloat(nm.value); if (Number.isFinite(v)) { it.num = v; on(); } };
+    });
+    el.querySelector('.lreset').onclick = () => {
+      labels[g] = JSON.parse(JSON.stringify(LABEL_DEFS[g]));
+      saveLabels(); renderLabelPanel(g); refreshPlots();
+    };
+  }
+  ['section', 'thick', 'diff'].forEach(g => {
+    renderLabelPanel(g);
+    $('lblBtn_' + g).onclick = () => { $('lbl_' + g).hidden = !$('lbl_' + g).hidden; };
+  });
+
   // ---------- 合成 ----------
 
   function sections() {
@@ -342,7 +425,7 @@
         const d = C.decimate(p, 20000, 0.3);
         traces.push({
           type: 'scattergl', mode: 'lines', x: d.x, y: d.z,
-          name: `${s.name} ${SIDE_JP[side]}`, legendgroup: String(s.id),
+          name: [s.name, labels.section[side === 'R' ? 'faceR' : 'faceL'].text].filter(Boolean).join(' '), legendgroup: String(s.id),
           line: { color: s.color, width: 1.5, dash: side === 'L' ? 'dash' : 'solid' },
           hovertemplate: `${esc(s.name)} ${SIDE_JP[side]}<br>X=%{x:.4f} mm<br>Z=%{y:.4f} mm<extra></extra>`,
         });
@@ -378,8 +461,8 @@
     const padZ = Math.max((zmax - zmin) * 0.1, R * 0.002);
     const layout = {
       margin: { l: 70, r: 20, t: 10, b: 50 },
-      xaxis: { title: { text: '刃先からの位置 X [mm]（峰側 ← → 刃先）' }, range: [-R - padX, padX], zeroline: true, zerolinecolor: '#999', exponentformat: 'none' },
-      yaxis: { title: { text: 'Z [mm]（上: 右面 / 下: 左面）' }, range: [zmin - padZ, zmax + padZ], zeroline: true, zerolinecolor: '#999', exponentformat: 'none' },
+      xaxis: { range: [-R - padX, padX], zeroline: true, zerolinecolor: '#999', exponentformat: 'none' },
+      yaxis: { range: [zmin - padZ, zmax + padZ], zeroline: true, zerolinecolor: '#999', exponentformat: 'none' },
       legend: { orientation: 'h', y: 1.02, yanchor: 'bottom', x: 0 },
       hovermode: 'closest', dragmode: 'zoom',
     };
@@ -389,8 +472,10 @@
       layout.yaxis.constrain = 'domain';
       layout.xaxis.constrain = 'domain';
     }
-    if (state.scale !== 1 && state.scale > 0) {
-      layout.annotations = [{ text: `厚み方向 ×${state.scale} 拡大表示`, xref: 'paper', yref: 'paper', x: 1, y: 0, xanchor: 'right', yanchor: 'bottom', showarrow: false, font: { color: '#b45309' } }];
+    applyLabels('section', layout);
+    const note = lblText('section', 'note');
+    if (state.scale !== 1 && state.scale > 0 && note) {
+      layout.annotations = [{ text: esc(note.replace(/\{倍率\}/g, state.scale)), xref: 'paper', yref: 'paper', x: 1, y: 0, xanchor: 'right', yanchor: 'bottom', showarrow: false, font: { color: '#b45309' } }];
     }
     Plotly.react(el, sectionTraces(ss), layout, plotCfg);
   }
@@ -429,7 +514,7 @@
     table.innerHTML = h + '</table>';
 
     const log = $('thickLog').checked;
-    const xaxis = { title: { text: '刃先からの距離 [mm]' }, type: log ? 'log' : 'linear', exponentformat: 'none' };
+    const xaxis = { type: log ? 'log' : 'linear', exponentformat: 'none' };
     const common = { margin: { l: 70, r: 20, t: 10, b: 50 }, legend: { orientation: 'h', y: 1.02, yanchor: 'bottom', x: 0 }, hovermode: 'x unified' };
 
     const traces = pairs.map(s => {
@@ -441,9 +526,9 @@
       return { type: 'scatter', mode: 'lines', x: xs, y: ys, name: s.name, line: { color: s.color, width: 2 },
         hovertemplate: `${esc(s.name)} %{y:.4f} mm<extra></extra>` };
     });
-    Plotly.react($('plotThick'), traces, Object.assign({}, common, {
-      xaxis, yaxis: { title: { text: '厚み [mm]' }, type: log ? 'log' : 'linear', exponentformat: 'none' },
-    }), plotCfg);
+    Plotly.react($('plotThick'), traces, applyLabels('thick', Object.assign({}, common, {
+      xaxis: Object.assign({}, xaxis), yaxis: { type: log ? 'log' : 'linear', exponentformat: 'none' },
+    })), plotCfg);
 
     // 基準セットとの差
     const others = pairs.slice(1);
@@ -455,13 +540,12 @@
         const v = (C.thicknessAt(s.sec, d) - C.thicknessAt(base.sec, d)) * 1000;
         if (Number.isFinite(v)) { xs.push(d); ys.push(v); }
       }
-      return { type: 'scatter', mode: 'lines', x: xs, y: ys, name: `${s.name} − ${base.name}`, line: { color: s.color, width: 2 },
+      return { type: 'scatter', mode: 'lines', x: xs, y: ys, name: labels.diff.series.text.replace(/\{セット名\}/g, s.name).replace(/\{基準\}/g, base.name), line: { color: s.color, width: 2 },
         hovertemplate: `${esc(s.name)} − ${esc(base.name)}: %{y:.1f} µm<extra></extra>` };
     });
-    Plotly.react($('plotDiff'), dtraces, Object.assign({}, common, {
-      xaxis: Object.assign({}, xaxis), yaxis: { title: { text: '厚みの差 [µm]' }, zeroline: true, zerolinecolor: '#666', exponentformat: 'none' },
-      showlegend: true,
-    }), plotCfg);
+    Plotly.react($('plotDiff'), dtraces, applyLabels('diff', Object.assign({}, common, {
+      xaxis: Object.assign({}, xaxis), yaxis: { zeroline: true, zerolinecolor: '#666', exponentformat: 'none' },
+    })), plotCfg);
   }
 
   function renderTipPlot() {
