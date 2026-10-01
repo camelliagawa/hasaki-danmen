@@ -302,17 +302,17 @@
       const slot = side => {
         const f = s[side];
         return `<div class="slot ${f ? 'filled' : ''}" data-set="${s.id}" data-side="${side}" title="クリックでファイル選択／ドロップで入れ替え">
-          <b>${SIDE_JP[side]}</b>${f ? `${esc(f.name)}<div class="muted">${fmtTime(f)}</div>` : '<span class="empty-msg">ここにドロップ<br>またはクリック</span>'}</div>`;
+          <b>${SIDE_JP[side]}${f ? '<button class="small clr" title="このファイルを外す">×</button>' : ''}</b>${f ? `${esc(f.name)}<div class="muted">${fmtTime(f)}</div>` : '<span class="empty-msg">ここにドロップ<br>またはクリック</span>'}</div>`;
       };
       return `<div class="set" data-set="${s.id}" style="--c:${s.color}">
         <div class="head">
           <input type="checkbox" class="vis" ${s.visible ? 'checked' : ''} title="表示">
           <input type="color" class="col" value="${s.color}" style="width:26px;height:20px;padding:0;border:none" title="色">
           <input type="text" class="name" value="${esc(s.name)}" title="セット名（凡例に表示）">
-          <span style="flex:1"></span>
           <button class="small" data-act="swap" title="右面と左面を入れ替え">左右入替</button>
-          <button class="small" data-act="up" title="上へ（一番上のそろったセットが差分の基準）">↑</button>
-          <button class="small" data-act="del">削除</button>
+          ${state.sets.indexOf(s) > 0 ? '<button class="small" data-act="up" title="ファイル（とZ移動・傾き）を上のセットと入れ替え。セット名・色はそのまま">⇅上と入替</button>' : ''}
+          <button class="small" data-act="clear" title="ファイルを外して枠を空にする（枠は残る）">空にする</button>
+          ${state.sets.length > 2 ? '<button class="small" data-act="del" title="このセットの枠ごと削除">セット削除</button>' : ''}
         </div>
         <div class="slots">${slot('R')}${slot('L')}</div>${warn}${gapWarn(s)}
         ${zRow(s)}
@@ -332,7 +332,12 @@
           if (l) place(s, 'R', l);
           if (r) place(s, 'L', r);
         } else if (b.dataset.act === 'up' && i > 0) {
-          state.sets.splice(i, 1); state.sets.splice(i - 1, 0, s);
+          // 中身だけ入れ替え（名前・色・表示は枠に残す）
+          const o = state.sets[i - 1];
+          for (const k of ['R', 'L', 'dz', 'rot']) [o[k], s[k]] = [s[k], o[k]];
+        } else if (b.dataset.act === 'clear') {
+          s.R = s.L = null; s.dz = 0; s.rot = 0;
+          if (!findFile(state.selectedId)) state.selectedId = allFiles()[0] ? allFiles()[0].id : null;
         } else if (b.dataset.act === 'del') {
           if ((s.R || s.L) && !confirm(`「${s.name}」を削除しますか？`)) return;
           state.sets.splice(i, 1);
@@ -350,6 +355,12 @@
         else if (b.dataset.z === 'plus') s.dz += step;
         else if (b.dataset.z === 'zero') { s.dz = 0; s.rot = 0; }
         else if (b.dataset.z === 'auto') autoMatch(s);
+        refreshAll();
+      });
+      div.querySelectorAll('.slot .clr').forEach(b => b.onclick = e => {
+        e.stopPropagation();
+        s[b.closest('.slot').dataset.side] = null;
+        if (!findFile(state.selectedId)) state.selectedId = allFiles()[0] ? allFiles()[0].id : null;
         refreshAll();
       });
       div.querySelectorAll('.slot').forEach(sl => sl.onclick = () => {

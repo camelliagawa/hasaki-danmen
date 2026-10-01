@@ -57,12 +57,15 @@
   .set { border: 1px solid var(--border); border-left: 5px solid var(--c, var(--accent)); border-radius: 6px; padding: 8px; margin-top: 8px; }
   .set.over { background: var(--drop); }
   .set .head { display: flex; align-items: center; gap: 6px; }
-  .set .head input.name { font-weight: 600; width: 140px; }
+  .set .head input.name { font-weight: 600; width: 0; flex: 1; min-width: 70px; }
+  .set .head button { white-space: nowrap; }
   .slots { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
   .slot { border: 2px dashed var(--border); border-radius: 6px; padding: 6px; min-height: 54px; cursor: pointer; font-size: 12px; word-break: break-all; }
   .slot:hover, .slot.over { border-color: var(--accent); background: var(--accent-weak); }
   .slot.filled { border-style: solid; }
-  .slot b { display: block; font-size: 12px; color: var(--muted); }
+  .slot b { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); }
+  .slot .clr { padding: 0 6px; line-height: 1.3; }
+  header .ver { font-size: 12px; color: var(--muted); border: 1px solid var(--border); border-radius: 10px; padding: 1px 8px; }
   .slot .empty-msg { color: var(--muted); }
   #plotDiff { height: 320px; }
   .lblPanel { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; margin-bottom: 8px; }
@@ -73,6 +76,7 @@
 <div id="overlay">セットの枠の上でドロップしてください（枠の外は空いているセットへ）</div>
 <header>
   <h1>刃先断面ビューア</h1>
+  <span class="ver">最終更新: 2026-10-01 10:43</span>
   <span class="hint">研磨前・研磨後などのセットごとに右面・左面の測定ファイル（.txt）をドロップ → 刃先を原点に合わせて断面を重ねて比較</span>
 </header>
 <main>
@@ -824,17 +828,17 @@
       const slot = side => {
         const f = s[side];
         return `<div class="slot ${f ? 'filled' : ''}" data-set="${s.id}" data-side="${side}" title="クリックでファイル選択／ドロップで入れ替え">
-          <b>${SIDE_JP[side]}</b>${f ? `${esc(f.name)}<div class="muted">${fmtTime(f)}</div>` : '<span class="empty-msg">ここにドロップ<br>またはクリック</span>'}</div>`;
+          <b>${SIDE_JP[side]}${f ? '<button class="small clr" title="このファイルを外す">×</button>' : ''}</b>${f ? `${esc(f.name)}<div class="muted">${fmtTime(f)}</div>` : '<span class="empty-msg">ここにドロップ<br>またはクリック</span>'}</div>`;
       };
       return `<div class="set" data-set="${s.id}" style="--c:${s.color}">
         <div class="head">
           <input type="checkbox" class="vis" ${s.visible ? 'checked' : ''} title="表示">
           <input type="color" class="col" value="${s.color}" style="width:26px;height:20px;padding:0;border:none" title="色">
           <input type="text" class="name" value="${esc(s.name)}" title="セット名（凡例に表示）">
-          <span style="flex:1"></span>
           <button class="small" data-act="swap" title="右面と左面を入れ替え">左右入替</button>
-          <button class="small" data-act="up" title="上へ（一番上のそろったセットが差分の基準）">↑</button>
-          <button class="small" data-act="del">削除</button>
+          ${state.sets.indexOf(s) > 0 ? '<button class="small" data-act="up" title="ファイル（とZ移動・傾き）を上のセットと入れ替え。セット名・色はそのまま">⇅上と入替</button>' : ''}
+          <button class="small" data-act="clear" title="ファイルを外して枠を空にする（枠は残る）">空にする</button>
+          ${state.sets.length > 2 ? '<button class="small" data-act="del" title="このセットの枠ごと削除">セット削除</button>' : ''}
         </div>
         <div class="slots">${slot('R')}${slot('L')}</div>${warn}${gapWarn(s)}
         ${zRow(s)}
@@ -854,7 +858,12 @@
           if (l) place(s, 'R', l);
           if (r) place(s, 'L', r);
         } else if (b.dataset.act === 'up' && i > 0) {
-          state.sets.splice(i, 1); state.sets.splice(i - 1, 0, s);
+          // 中身だけ入れ替え（名前・色・表示は枠に残す）
+          const o = state.sets[i - 1];
+          for (const k of ['R', 'L', 'dz', 'rot']) [o[k], s[k]] = [s[k], o[k]];
+        } else if (b.dataset.act === 'clear') {
+          s.R = s.L = null; s.dz = 0; s.rot = 0;
+          if (!findFile(state.selectedId)) state.selectedId = allFiles()[0] ? allFiles()[0].id : null;
         } else if (b.dataset.act === 'del') {
           if ((s.R || s.L) && !confirm(`「${s.name}」を削除しますか？`)) return;
           state.sets.splice(i, 1);
@@ -872,6 +881,12 @@
         else if (b.dataset.z === 'plus') s.dz += step;
         else if (b.dataset.z === 'zero') { s.dz = 0; s.rot = 0; }
         else if (b.dataset.z === 'auto') autoMatch(s);
+        refreshAll();
+      });
+      div.querySelectorAll('.slot .clr').forEach(b => b.onclick = e => {
+        e.stopPropagation();
+        s[b.closest('.slot').dataset.side] = null;
+        if (!findFile(state.selectedId)) state.selectedId = allFiles()[0] ? allFiles()[0].id : null;
         refreshAll();
       });
       div.querySelectorAll('.slot').forEach(sl => sl.onclick = () => {
