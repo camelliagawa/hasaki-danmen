@@ -122,7 +122,7 @@
       note: { label: '拡大表示の注記（{倍率}は倍率）', show: false, text: '厚み方向 ×{倍率} 拡大表示' },
       tick: { label: '目盛の数値', show: true },
       xr: { label: 'X軸の数値', axis: { min: '', max: '', dtick: '', digits: '' } },
-      yr: { label: 'Y軸の数値', axis: { min: '', max: '0.4', dtick: '0.2', digits: '' } },
+      yr: { label: 'Y軸の数値', axis: { min: '', max: '', dtick: '0.2', digits: '' } },
       font: { label: '文字サイズ', num: 12 },
     },
     thick: {
@@ -643,7 +643,9 @@
 
   // PNG保存（背景透明・2倍解像度）。ファイル名を確実に付けるため自前でダウンロード
   async function savePng(id, name) {
-    const dataUrl = await Plotly.toImage($(id), { format: 'png', scale: 2 });
+    // グラフ部分のみ（表記の設定欄などは含まない）。画面上のグラフと同じ大きさで保存
+    const el = $(id);
+    const dataUrl = await Plotly.toImage(el, { format: 'png', scale: 2, width: el.clientWidth, height: el.clientHeight });
     const blob = await (await fetch(dataUrl)).blob();
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob); a.download = safe(name) + '.png';
@@ -702,6 +704,67 @@
     download(baseName() + '_合成断面.csv', lines.join('\r\n'));
   };
 
+  // ---------- 設定ファイルの書き出し・読み込み ----------
+  //   表記・表示設定・セットの見た目（名前・色・線種・表示）を JSON で保存し、別のPCで再現する
+  const DISPLAY_IDS = ['alignMode', 'levelOn', 'levelLen', 'matchFrom', 'matchTo', 'matchTilt', 'detAngle', 'nudgeStep', 'distInput', 'thickLog', 'csvPitch', 'tipWin'];
+
+  function exportSettings() {
+    const display = { scale: state.scale, range: state.range };
+    for (const id of DISPLAY_IDS) { const el = $(id); display[id] = el.type === 'checkbox' ? el.checked : el.value; }
+    const data = {
+      app: 'hasaki-danmen', version: 1, saved: new Date().toISOString(),
+      labels, display,
+      sets: state.sets.map(s => ({ name: s.name, color: s.color, dash: s.dash, visible: s.visible })),
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = '刃先断面ビューア_設定.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  async function importSettings(file) {
+    let data;
+    try { data = JSON.parse(await file.text()); } catch (e) { return alert('設定ファイルを読み込めませんでした: ' + e.message); }
+    if (!data || data.app !== 'hasaki-danmen') return alert('刃先断面ビューアの設定ファイルではありません');
+    // 表記（既定値に重ねる。未知の項目は無視）
+    if (data.labels) for (const g in labels) {
+      labels[g] = JSON.parse(JSON.stringify(LABEL_DEFS[g]));
+      for (const k in labels[g]) {
+        const v = data.labels[g] && data.labels[g][k];
+        if (!v) continue;
+        const ax = labels[g][k].axis;
+        Object.assign(labels[g][k], v, { label: labels[g][k].label });
+        if (ax) labels[g][k].axis = Object.assign({}, ax, v.axis);
+      }
+    }
+    saveLabels();
+    ['section', 'thick', 'diff'].forEach(renderLabelPanel);
+    // 表示設定
+    const d = data.display || {};
+    for (const id of DISPLAY_IDS) {
+      if (!(id in d)) continue;
+      const el = $(id);
+      if (el.type === 'checkbox') el.checked = !!d[id]; else el.value = d[id];
+    }
+    const pick = (group, attr, v) => $(group).querySelectorAll('button').forEach(b => b.classList.toggle('on', parseFloat(b.dataset[attr]) === v));
+    if (Number.isFinite(d.scale)) { state.scale = d.scale; pick('scaleBtns', 's', d.scale); }
+    if (Number.isFinite(d.range)) { state.range = d.range; pick('rangeBtns', 'r', d.range); }
+    // セットの見た目（読み込んだファイルはそのまま）
+    (data.sets || []).forEach((v, i) => {
+      const s = state.sets[i] || addSet(v.name);
+      if (v.name) s.name = v.name;
+      if (v.color) s.color = v.color;
+      if (v.dash) s.dash = v.dash;
+      if (typeof v.visible === 'boolean') s.visible = v.visible;
+    });
+    refreshAll();
+  }
+
+  $('exportSettings').onclick = exportSettings;
+  $('importSettings').onclick = () => $('settingsInput').click();
+  $('settingsInput').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) importSettings(f); };
+
   // ---------- ドラッグ＆ドロップ ----------
 
   const fi = $('fileInput');
@@ -726,7 +789,12 @@
   window.addEventListener('dragover', e => { e.preventDefault(); const t = dropTarget(e.target); setOver(t ? t.el : null); });
   window.addEventListener('drop', e => {
     e.preventDefault(); dragDepth = 0; document.body.classList.remove('dragging'); setOver(null);
-    if (e.dataTransfer && e.dataTransfer.files.length) loadFiles([...e.dataTransfer.files], dropTarget(e.target));
+    if (!e.dataTransfer || !e.dataTransfer.files.length) return;
+    const all = [...e.dataTransfer.files];
+    const json = all.filter(f => /\.json$/i.test(f.name));
+    const data = all.filter(f => !/\.json$/i.test(f.name));
+    json.forEach(importSettings);
+    if (data.length) loadFiles(data, dropTarget(e.target));
   });
 
   // ---------- その他のイベント ----------

@@ -96,17 +96,6 @@
     </section>
 
     <section class="card">
-      <h2>刃先位置の調整</h2>
-      <div class="muted">刃先Xは自動検出値。数値入力・±ボタン・下の「刃先確認」グラフのクリックで調整できます。</div>
-      <div class="ctrl"><label>±ボタンの刻み</label>
-        <select id="nudgeStep"><option value="0.0001">0.1 µm</option><option value="0.001" selected>1 µm</option><option value="0.01">10 µm</option><option value="0.1">100 µm</option></select>
-        <label>検出しきい角</label><input type="number" id="detAngle" value="40" min="5" max="85" step="1" style="width:60px">°
-        <button class="small" id="redetectAll">全て再検出</button>
-      </div>
-      <div id="fileList"></div>
-    </section>
-
-    <section class="card">
       <h2>表示設定</h2>
       <div class="ctrl"><label>縦横比</label>
         <span id="scaleBtns">
@@ -129,13 +118,30 @@
         <label>近似区間 0〜</label><input type="number" id="levelLen" value="5" min="0.01" step="0.5" style="width:70px"> mm
       </div>
       <div class="muted">中心線水平化: 刃先から指定区間の両面の近似直線の二等分線が水平になるよう、刃先を中心に回転します。厚みは回転後の縦方向で計算します。</div>
+      <div class="ctrl" style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px"><label>設定ファイル</label>
+        <button class="small" id="exportSettings" title="表記・表示設定・セット名/色/線種をファイルに保存">書き出し</button>
+        <button class="small" id="importSettings" title="書き出した設定ファイル（.json）を読み込む">読み込み</button>
+        <input type="file" id="settingsInput" accept=".json,application/json" hidden>
+      </div>
+      <div class="muted">「表記」などの設定はブラウザごとに保存されます。別のPCで同じ見た目にするには、書き出したファイルを読み込んでください（.json ファイルはドロップでも読み込めます）。</div>
+    </section>
+
+    <section class="card">
+      <h2>刃先位置の調整</h2>
+      <div class="muted">刃先Xは自動検出値。数値入力・±ボタン・下の「刃先確認」グラフのクリックで調整できます。</div>
+      <div class="ctrl"><label>±ボタンの刻み</label>
+        <select id="nudgeStep"><option value="0.0001">0.1 µm</option><option value="0.001" selected>1 µm</option><option value="0.01">10 µm</option><option value="0.1">100 µm</option></select>
+        <label>検出しきい角</label><input type="number" id="detAngle" value="40" min="5" max="85" step="1" style="width:60px">°
+        <button class="small" id="redetectAll">全て再検出</button>
+      </div>
+      <div id="fileList"></div>
     </section>
   </div>
 
   <div>
     <section class="card">
       <h2>包丁断面（刃先 = 原点）<span class="sp"></span><button class="small" id="lblBtn_section" title="グラフ内の文字の表示/非表示・文言を変更">表記</button><button class="small" id="pngSection">PNG保存</button></h2>
-      <div id="lbl_section" class="lblPanel" hidden></div>
+      <div id="lbl_section" class="lblPanel"></div>
       <div id="plotSection" class="plot"><div class="empty">ファイルを読み込むとここに断面が表示されます</div></div>
     </section>
 
@@ -150,13 +156,13 @@
 
     <section class="card">
       <h2>厚み曲線<span class="sp"></span><label class="muted"><input type="checkbox" id="thickLog" checked> 横軸を対数</label><button class="small" id="lblBtn_thick" title="グラフ内の文字の表示/非表示・文言を変更">表記</button><button class="small" id="pngThick">PNG保存</button></h2>
-      <div id="lbl_thick" class="lblPanel" hidden></div>
+      <div id="lbl_thick" class="lblPanel"></div>
       <div id="plotThick" class="plot"></div>
     </section>
 
     <section class="card" id="diffCard" hidden>
       <h2>厚みの変化（基準セットとの差）<span class="sp"></span><button class="small" id="lblBtn_diff" title="グラフ内の文字の表示/非表示・文言を変更">表記</button><button class="small" id="pngDiff">PNG保存</button></h2>
-      <div id="lbl_diff" class="lblPanel" hidden></div>
+      <div id="lbl_diff" class="lblPanel"></div>
       <div class="muted">差 = 各セットの厚み − 基準セット（一番上の、右面・左面がそろったセット）の厚み。マイナスは薄くなった量。</div>
       <div id="plotDiff" class="plot"></div>
     </section>

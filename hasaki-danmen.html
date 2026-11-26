@@ -77,7 +77,7 @@
 <div id="overlay">セットの枠の上でドロップしてください（枠の外は空いているセットへ）</div>
 <header>
   <h1>刃先断面ビューア</h1>
-  <span class="ver">最終更新: 2026-11-26 14:30</span>
+  <span class="ver">最終更新: 2026-11-26 14:58</span>
   <span class="hint">研磨前・研磨後などのセットごとに右面・左面の測定ファイル（.txt）をドロップ → 刃先を原点に合わせて断面を重ねて比較</span>
 </header>
 <main>
@@ -93,17 +93,6 @@
       </div>
       <div class="muted">Z移動: 各セットの断面を上下に平行移動します（±ボタンの刻みは「刃先位置の調整」欄の設定）。傾き: 刃先（原点）を中心に回転します（測定時の置き方の傾きの差の補正用）。自動合わせは、指定区間で一番上のセット（基準）と右面・左面が最もよく重なるZ移動量（と傾き）を計算します。</div>
       <input type="file" id="fileInput" multiple accept=".txt,.csv,.dat" hidden>
-    </section>
-
-    <section class="card">
-      <h2>刃先位置の調整</h2>
-      <div class="muted">刃先Xは自動検出値。数値入力・±ボタン・下の「刃先確認」グラフのクリックで調整できます。</div>
-      <div class="ctrl"><label>±ボタンの刻み</label>
-        <select id="nudgeStep"><option value="0.0001">0.1 µm</option><option value="0.001" selected>1 µm</option><option value="0.01">10 µm</option><option value="0.1">100 µm</option></select>
-        <label>検出しきい角</label><input type="number" id="detAngle" value="40" min="5" max="85" step="1" style="width:60px">°
-        <button class="small" id="redetectAll">全て再検出</button>
-      </div>
-      <div id="fileList"></div>
     </section>
 
     <section class="card">
@@ -129,13 +118,30 @@
         <label>近似区間 0〜</label><input type="number" id="levelLen" value="5" min="0.01" step="0.5" style="width:70px"> mm
       </div>
       <div class="muted">中心線水平化: 刃先から指定区間の両面の近似直線の二等分線が水平になるよう、刃先を中心に回転します。厚みは回転後の縦方向で計算します。</div>
+      <div class="ctrl" style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px"><label>設定ファイル</label>
+        <button class="small" id="exportSettings" title="表記・表示設定・セット名/色/線種をファイルに保存">書き出し</button>
+        <button class="small" id="importSettings" title="書き出した設定ファイル（.json）を読み込む">読み込み</button>
+        <input type="file" id="settingsInput" accept=".json,application/json" hidden>
+      </div>
+      <div class="muted">「表記」などの設定はブラウザごとに保存されます。別のPCで同じ見た目にするには、書き出したファイルを読み込んでください（.json ファイルはドロップでも読み込めます）。</div>
+    </section>
+
+    <section class="card">
+      <h2>刃先位置の調整</h2>
+      <div class="muted">刃先Xは自動検出値。数値入力・±ボタン・下の「刃先確認」グラフのクリックで調整できます。</div>
+      <div class="ctrl"><label>±ボタンの刻み</label>
+        <select id="nudgeStep"><option value="0.0001">0.1 µm</option><option value="0.001" selected>1 µm</option><option value="0.01">10 µm</option><option value="0.1">100 µm</option></select>
+        <label>検出しきい角</label><input type="number" id="detAngle" value="40" min="5" max="85" step="1" style="width:60px">°
+        <button class="small" id="redetectAll">全て再検出</button>
+      </div>
+      <div id="fileList"></div>
     </section>
   </div>
 
   <div>
     <section class="card">
       <h2>包丁断面（刃先 = 原点）<span class="sp"></span><button class="small" id="lblBtn_section" title="グラフ内の文字の表示/非表示・文言を変更">表記</button><button class="small" id="pngSection">PNG保存</button></h2>
-      <div id="lbl_section" class="lblPanel" hidden></div>
+      <div id="lbl_section" class="lblPanel"></div>
       <div id="plotSection" class="plot"><div class="empty">ファイルを読み込むとここに断面が表示されます</div></div>
     </section>
 
@@ -150,13 +156,13 @@
 
     <section class="card">
       <h2>厚み曲線<span class="sp"></span><label class="muted"><input type="checkbox" id="thickLog" checked> 横軸を対数</label><button class="small" id="lblBtn_thick" title="グラフ内の文字の表示/非表示・文言を変更">表記</button><button class="small" id="pngThick">PNG保存</button></h2>
-      <div id="lbl_thick" class="lblPanel" hidden></div>
+      <div id="lbl_thick" class="lblPanel"></div>
       <div id="plotThick" class="plot"></div>
     </section>
 
     <section class="card" id="diffCard" hidden>
       <h2>厚みの変化（基準セットとの差）<span class="sp"></span><button class="small" id="lblBtn_diff" title="グラフ内の文字の表示/非表示・文言を変更">表記</button><button class="small" id="pngDiff">PNG保存</button></h2>
-      <div id="lbl_diff" class="lblPanel" hidden></div>
+      <div id="lbl_diff" class="lblPanel"></div>
       <div class="muted">差 = 各セットの厚み − 基準セット（一番上の、右面・左面がそろったセット）の厚み。マイナスは薄くなった量。</div>
       <div id="plotDiff" class="plot"></div>
     </section>
@@ -658,7 +664,7 @@
       note: { label: '拡大表示の注記（{倍率}は倍率）', show: false, text: '厚み方向 ×{倍率} 拡大表示' },
       tick: { label: '目盛の数値', show: true },
       xr: { label: 'X軸の数値', axis: { min: '', max: '', dtick: '', digits: '' } },
-      yr: { label: 'Y軸の数値', axis: { min: '', max: '0.4', dtick: '0.2', digits: '' } },
+      yr: { label: 'Y軸の数値', axis: { min: '', max: '', dtick: '0.2', digits: '' } },
       font: { label: '文字サイズ', num: 12 },
     },
     thick: {
@@ -1179,7 +1185,9 @@
 
   // PNG保存（背景透明・2倍解像度）。ファイル名を確実に付けるため自前でダウンロード
   async function savePng(id, name) {
-    const dataUrl = await Plotly.toImage($(id), { format: 'png', scale: 2 });
+    // グラフ部分のみ（表記の設定欄などは含まない）。画面上のグラフと同じ大きさで保存
+    const el = $(id);
+    const dataUrl = await Plotly.toImage(el, { format: 'png', scale: 2, width: el.clientWidth, height: el.clientHeight });
     const blob = await (await fetch(dataUrl)).blob();
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob); a.download = safe(name) + '.png';
@@ -1238,6 +1246,67 @@
     download(baseName() + '_合成断面.csv', lines.join('\r\n'));
   };
 
+  // ---------- 設定ファイルの書き出し・読み込み ----------
+  //   表記・表示設定・セットの見た目（名前・色・線種・表示）を JSON で保存し、別のPCで再現する
+  const DISPLAY_IDS = ['alignMode', 'levelOn', 'levelLen', 'matchFrom', 'matchTo', 'matchTilt', 'detAngle', 'nudgeStep', 'distInput', 'thickLog', 'csvPitch', 'tipWin'];
+
+  function exportSettings() {
+    const display = { scale: state.scale, range: state.range };
+    for (const id of DISPLAY_IDS) { const el = $(id); display[id] = el.type === 'checkbox' ? el.checked : el.value; }
+    const data = {
+      app: 'hasaki-danmen', version: 1, saved: new Date().toISOString(),
+      labels, display,
+      sets: state.sets.map(s => ({ name: s.name, color: s.color, dash: s.dash, visible: s.visible })),
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = '刃先断面ビューア_設定.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  async function importSettings(file) {
+    let data;
+    try { data = JSON.parse(await file.text()); } catch (e) { return alert('設定ファイルを読み込めませんでした: ' + e.message); }
+    if (!data || data.app !== 'hasaki-danmen') return alert('刃先断面ビューアの設定ファイルではありません');
+    // 表記（既定値に重ねる。未知の項目は無視）
+    if (data.labels) for (const g in labels) {
+      labels[g] = JSON.parse(JSON.stringify(LABEL_DEFS[g]));
+      for (const k in labels[g]) {
+        const v = data.labels[g] && data.labels[g][k];
+        if (!v) continue;
+        const ax = labels[g][k].axis;
+        Object.assign(labels[g][k], v, { label: labels[g][k].label });
+        if (ax) labels[g][k].axis = Object.assign({}, ax, v.axis);
+      }
+    }
+    saveLabels();
+    ['section', 'thick', 'diff'].forEach(renderLabelPanel);
+    // 表示設定
+    const d = data.display || {};
+    for (const id of DISPLAY_IDS) {
+      if (!(id in d)) continue;
+      const el = $(id);
+      if (el.type === 'checkbox') el.checked = !!d[id]; else el.value = d[id];
+    }
+    const pick = (group, attr, v) => $(group).querySelectorAll('button').forEach(b => b.classList.toggle('on', parseFloat(b.dataset[attr]) === v));
+    if (Number.isFinite(d.scale)) { state.scale = d.scale; pick('scaleBtns', 's', d.scale); }
+    if (Number.isFinite(d.range)) { state.range = d.range; pick('rangeBtns', 'r', d.range); }
+    // セットの見た目（読み込んだファイルはそのまま）
+    (data.sets || []).forEach((v, i) => {
+      const s = state.sets[i] || addSet(v.name);
+      if (v.name) s.name = v.name;
+      if (v.color) s.color = v.color;
+      if (v.dash) s.dash = v.dash;
+      if (typeof v.visible === 'boolean') s.visible = v.visible;
+    });
+    refreshAll();
+  }
+
+  $('exportSettings').onclick = exportSettings;
+  $('importSettings').onclick = () => $('settingsInput').click();
+  $('settingsInput').onchange = e => { const f = e.target.files[0]; e.target.value = ''; if (f) importSettings(f); };
+
   // ---------- ドラッグ＆ドロップ ----------
 
   const fi = $('fileInput');
@@ -1262,7 +1331,12 @@
   window.addEventListener('dragover', e => { e.preventDefault(); const t = dropTarget(e.target); setOver(t ? t.el : null); });
   window.addEventListener('drop', e => {
     e.preventDefault(); dragDepth = 0; document.body.classList.remove('dragging'); setOver(null);
-    if (e.dataTransfer && e.dataTransfer.files.length) loadFiles([...e.dataTransfer.files], dropTarget(e.target));
+    if (!e.dataTransfer || !e.dataTransfer.files.length) return;
+    const all = [...e.dataTransfer.files];
+    const json = all.filter(f => /\.json$/i.test(f.name));
+    const data = all.filter(f => !/\.json$/i.test(f.name));
+    json.forEach(importSettings);
+    if (data.length) loadFiles(data, dropTarget(e.target));
   });
 
   // ---------- その他のイベント ----------
