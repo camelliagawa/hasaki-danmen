@@ -116,8 +116,9 @@
   // 刃先（触針が刃先から落ちる直前の角）の X を返す
   //   峰側から刃先側へ測定し、刃先を越えると傾きが急変する前提
   //   opts.window: 傾き計算の窓幅[mm], opts.angleDeg: 急変とみなす角度差[°]
+  //   opts.minDrop: 落下とみなす最小の落ち込み量[mm]（0.1mm先で判定）
   function detectTip(x, z, opts) {
-    opts = Object.assign({ window: 0.01, angleDeg: 40 }, opts);
+    opts = Object.assign({ window: 0.01, angleDeg: 40, minDrop: 0.02 }, opts);
     const n = x.length;
     const dx = (x[n - 1] - x[0]) / (n - 1);
     const w = Math.max(5, Math.round(opts.window / dx));
@@ -132,10 +133,18 @@
     const thr = opts.angleDeg * Math.PI / 180;
     const dev = i => Math.abs(Math.atan(s[i]) - base);
 
+    // 本当に落ちたか: 0.1mm 先で基準傾きの延長線から minDrop 以上離れていること
+    //   （表面の小さな凸凹・ゴミ・傷は傾きが急でも数µmで元に戻るので除外される）
+    const look = Math.max(w, Math.round(0.1 / dx));
+    const tb = Math.tan(base);
+    const dropped = i => {
+      const j = Math.min(i + look, n - 1);
+      return Math.abs(z[j] - (z[i] + tb * (x[j] - x[i]))) > opts.minDrop;
+    };
     let hit = -1;
     for (let i = 0; i < s.length - w; i++) {
       // 窓の後ろ半分・1窓先も急変していれば「落下」と判定（ノイズ除け）
-      if (dev(i) > thr && dev(Math.min(i + (w >> 1), s.length - 1)) > thr && dev(Math.min(i + w, s.length - 1)) > thr) { hit = i; break; }
+      if (dev(i) > thr && dev(Math.min(i + (w >> 1), s.length - 1)) > thr && dev(Math.min(i + w, s.length - 1)) > thr && dropped(i)) { hit = i; break; }
     }
     if (hit < 0) return { x: x[n - 1], index: n - 1, found: false };
 
